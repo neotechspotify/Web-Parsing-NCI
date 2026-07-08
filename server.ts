@@ -6,11 +6,13 @@ import XLSX from 'xlsx-js-style';
 import xml2js from 'xml2js';
 import { createServer as createViteServer } from 'vite';
 
-// Ensure required directories exist
-fs.mkdirSync('input', { recursive: true });
-fs.mkdirSync('outputs', { recursive: true });
-fs.mkdirSync('templates', { recursive: true });
-fs.mkdirSync('database', { recursive: true });
+// Ensure required directories exist (skip on Vercel to avoid EROFS error on read-only system)
+if (!process.env.VERCEL) {
+  fs.mkdirSync('input', { recursive: true });
+  fs.mkdirSync('outputs', { recursive: true });
+  fs.mkdirSync('templates', { recursive: true });
+  fs.mkdirSync('database', { recursive: true });
+}
 
 // Helper to automatically fit column widths for a JSON worksheet
 function autoFitJsonColumns(worksheet: XLSX.WorkSheet, data: any[]) {
@@ -280,7 +282,7 @@ function createStyledPivotSheet(aalPivotData: any[], totalCount: number, valueCo
   return sheet;
 }
 
-const app = express();
+export const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '50mb' }));
@@ -289,7 +291,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Multer storage configuration for parsing uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'input/');
+    const uploadDir = process.env.VERCEL ? '/tmp' : 'input/';
+    cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
     cb(null, file.originalname);
@@ -1253,7 +1256,7 @@ app.post('/api/process', upload.single('file'), async (req, res, next) => {
     const validEvents = Object.keys(magMap); // or parsed csv names
     const fpEvents = loadFalsePositives(path.join(baseDb, 'False_Positive.txt'));
 
-    const outputDir = path.join('outputs', instansi);
+    const outputDir = path.join(process.env.VERCEL ? '/tmp/outputs' : 'outputs', instansi);
     fs.mkdirSync(outputDir, { recursive: true });
 
     if (instansi.toLowerCase() === 'aal') {
@@ -1809,8 +1812,11 @@ app.get('/api/download', (req, res) => {
   const safePath = path.resolve(filePathQuery);
   const rootDir = process.cwd();
 
-  // Security check: ensure path is inside the project directory
-  if (!safePath.startsWith(rootDir)) {
+  // Security check: ensure path is inside the project directory or inside /tmp (for Vercel serverless)
+  const isInsideRootDir = safePath.startsWith(rootDir);
+  const isInsideTmpDir = safePath.startsWith('/tmp');
+
+  if (!isInsideRootDir && !isInsideTmpDir) {
     return res.status(403).send('Access Denied');
   }
 
@@ -1853,4 +1859,8 @@ async function startServer() {
   });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
