@@ -1433,21 +1433,6 @@ app.post('/api/process', upload.single('file'), async (req, res, next) => {
       // WhatsApp text generation for AAL
       let waText = '';
       if (isDga) {
-        waText = `Selamat Pagi Rekan - Rekan,
-
-Berikut kami lampirkan hasil dari monitoring/pivot data DGA AAL pada Shift ${shift},
-dimana terdeteksi aktivitas DGA URL sebagai berikut :
-
-`;
-        aalPivotData.forEach(group => {
-          waText += `*IP: ${group.ip}* (Total: ${group.subtotal} deteksi)\n`;
-          group.domains.forEach(d => {
-            waText += ` - ${d.domain} (${d.count} event)\n`;
-          });
-          waText += `\n`;
-        });
-        waText += `Total Keseluruhan Event DGA: ${totalCount} event\n\nDemikian atas informasinya.\nTerimakasih,\nSOC Neotech`;
-      } else {
         // Collect unique domains from pivot table
         const allDomains: string[] = [];
         aalPivotData.forEach(group => {
@@ -1484,6 +1469,57 @@ Rekomendasi Tindakan:
 * Memberikan edukasi kepada user / pengguna untuk tidak mengakses domain yang tidak dikenal.
 
 Detail event lengkap terlampir pada file Excel.
+
+Terima kasih.
+Regards, SOC Neotech`;
+      } else {
+        // Collect unique domains from pivot table
+        const allDomains: string[] = [];
+        aalPivotData.forEach(group => {
+          group.domains.forEach(d => {
+            if (d.domain && typeof d.domain === 'string') {
+              allDomains.push(d.domain.trim());
+            }
+          });
+        });
+        const rawSelectedDomain = allDomains.length > 0 ? allDomains[Math.floor(Math.random() * allDomains.length)] : 'morphed.ru';
+
+        // Look up MAC Address from raw logs, fallback if not found
+        const macList = parsedData
+          .map(row => {
+            const keys = Object.keys(row);
+            const macKey = keys.find(k => {
+              const lowerK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+              return lowerK === 'mac' || lowerK === 'macaddress' || lowerK === 'sourcemac' || lowerK === 'devicemac' || lowerK === 'mac_address';
+            });
+            return macKey ? (row[macKey] || '').trim() : '';
+          })
+          .filter(Boolean);
+        const macAddress = macList.length > 0 ? macList[0] : '18:6f:2d:fa:82:68';
+
+        waText = `Subject: [SOC Report] Domain was blocked by dns botnet C&C
+
+Dear Team,
+Terdeteksi aktivitas anomali berupa komunikasi dari endpoint internal menuju server pengendali Botnet (Command & Control). Meskipun koneksi diblokir (redirect) oleh Firewall, perangkat terindikasi kuat telah terinfeksi / melakukan koneksi ke domain malicious.
+
+Ringkasan Temuan:
+* Event: Domain was blocked by dns botnet C&C
+* Total Event: ${totalCount}
+* Total Detected by Source IP: ${aalPivotData.length}
+* Dest. URL: ${rawSelectedDomain}
+* MAC Address: ${macAddress}
+* Status Network: Blocked/Redirected
+* Periode: 8 Jam
+
+Analisis: Endpoint mencoba menghubungi domain yang diklasifikasikan sebagai Botnet C&C. Ini mengindikasikan adanya automated script/malware yang berjalan.
+
+Rekomendasi Tindakan (SEGERA):
+* Isolasi Host: Segera putuskan koneksi jaringan perangkat (Isolasi) untuk mencegah penyebaran lateral.
+* Deep Scanning: Lakukan Full Scan menggunakan EDR/Antivirus terupdate.
+* Investigasi Persistence: Periksa Task Scheduler, Startup Apps, dan Registry untuk menghapus script pemicu.
+* Memberikan edukasi kepada user agar tidak mengakses domain atau situs yang tidak dikenal.
+
+Detail lengkap terlampir pada file Excel.
 
 Terima kasih.
 Regards, SOC Neotech`;
