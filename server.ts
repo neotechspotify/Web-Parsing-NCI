@@ -1783,13 +1783,29 @@ SOC Neotech`;
         "attacker", "target", "deviceCount", "targetNetwork", "attackerNetwork", "usernameOrderBy"
       ];
 
-      const rows = offensesList.map(offense => {
+      let rows = offensesList.map(offense => {
         const row: Record<string, string> = {};
         for (const tag of tags) {
           row[tag] = offense[tag] || "";
         }
         return row;
       });
+
+      if (instansi.toLowerCase() === 'kemkes') {
+        const initialCount = rows.length;
+        rows = rows.filter(row => {
+          const sev = (row.severity || "").trim();
+          const att = (row.attacker || "").trim();
+          if (sev === "0") {
+            return false;
+          }
+          if (att.startsWith("192.168.")) {
+            return false;
+          }
+          return true;
+        });
+        processLog.push(`🧹 [KEMKES] Menyaring data: Menghapus baris dengan Severity = 0 atau Attacker = 192.168.* (Sisa ${rows.length} dari ${initialCount} baris).`);
+      }
 
       const baseNameNoExt = file ? path.basename(file.path, '.xml') : 'pasted_xml';
       const dateMatch = /(\d{4})-(\d{2})-(\d{2})/.exec(baseNameNoExt);
