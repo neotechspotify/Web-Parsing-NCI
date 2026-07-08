@@ -14,6 +14,45 @@ if (!process.env.VERCEL) {
   fs.mkdirSync('database', { recursive: true });
 }
 
+// Synchronous folder copy helper for Vercel /tmp environment
+function copyFolderSync(from: string, to: string) {
+  if (!fs.existsSync(from)) return;
+  fs.mkdirSync(to, { recursive: true });
+  const elements = fs.readdirSync(from);
+  for (const element of elements) {
+    const fromPath = path.join(from, element);
+    const toPath = path.join(to, element);
+    if (fs.statSync(fromPath).isDirectory()) {
+      copyFolderSync(fromPath, toPath);
+    } else {
+      fs.copyFileSync(fromPath, toPath);
+    }
+  }
+}
+
+// Dynamically resolve templates and database folders to writable /tmp on Vercel
+function getTemplatesDir(): string {
+  if (process.env.VERCEL) {
+    const tmpTemplates = '/tmp/templates';
+    if (!fs.existsSync(tmpTemplates)) {
+      copyFolderSync(path.join(process.cwd(), 'templates'), tmpTemplates);
+    }
+    return tmpTemplates;
+  }
+  return path.join(process.cwd(), 'templates');
+}
+
+function getDatabaseDir(): string {
+  if (process.env.VERCEL) {
+    const tmpDatabase = '/tmp/database';
+    if (!fs.existsSync(tmpDatabase)) {
+      copyFolderSync(path.join(process.cwd(), 'database'), tmpDatabase);
+    }
+    return tmpDatabase;
+  }
+  return path.join(process.cwd(), 'database');
+}
+
 // Helper to automatically fit column widths for a JSON worksheet
 function autoFitJsonColumns(worksheet: XLSX.WorkSheet, data: any[]) {
   if (!data || data.length === 0) return;
@@ -341,7 +380,7 @@ function categorizeMagnitude(mag: number): string {
 }
 
 function findTemplateFile(instansi: string, eventName: string): string | null {
-  const baseDir = path.join(process.cwd(), 'templates', instansi.toLowerCase());
+  const baseDir = path.join(getTemplatesDir(), instansi.toLowerCase());
   if (!fs.existsSync(baseDir)) return null;
 
   const targetClean = eventName.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -926,7 +965,7 @@ function cleanShiftFolder(outputDir: string, shiftKey: string): string {
 // API Routes
 app.get('/api/templates', (req, res) => {
   try {
-    const baseDir = path.join(process.cwd(), 'templates');
+    const baseDir = getTemplatesDir();
     if (!fs.existsSync(baseDir)) {
       return res.json({});
     }
@@ -952,7 +991,7 @@ app.get('/api/templates', (req, res) => {
 
 app.get('/api/templates/:instansi/:name', (req, res) => {
   const { instansi, name } = req.params;
-  const filePath = path.join(process.cwd(), 'templates', instansi, `${name}.txt`);
+  const filePath = path.join(getTemplatesDir(), instansi, `${name}.txt`);
 
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'Template not found' });
@@ -969,7 +1008,7 @@ app.get('/api/templates/:instansi/:name', (req, res) => {
 app.post('/api/templates/:instansi/:name', (req, res) => {
   const { instansi, name } = req.params;
   const { content } = req.body;
-  const filePath = path.join(process.cwd(), 'templates', instansi, `${name}.txt`);
+  const filePath = path.join(getTemplatesDir(), instansi, `${name}.txt`);
 
   try {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -982,7 +1021,7 @@ app.post('/api/templates/:instansi/:name', (req, res) => {
 
 app.delete('/api/templates/:instansi/:name', (req, res) => {
   const { instansi, name } = req.params;
-  const filePath = path.join(process.cwd(), 'templates', instansi, `${name}.txt`);
+  const filePath = path.join(getTemplatesDir(), instansi, `${name}.txt`);
 
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'Template not found' });
@@ -1004,8 +1043,8 @@ app.post('/api/templates/create', (req, res) => {
   }
 
   const cleanFilename = filename.toLowerCase().endsWith('.txt') ? filename : `${filename}.txt`;
-  const baseTemplatePath = path.join(process.cwd(), 'templates', instansi, 'event_template.txt');
-  const targetTemplatePath = path.join(process.cwd(), 'templates', instansi, cleanFilename);
+  const baseTemplatePath = path.join(getTemplatesDir(), instansi, 'event_template.txt');
+  const targetTemplatePath = path.join(getTemplatesDir(), instansi, cleanFilename);
 
   try {
     if (!fs.existsSync(baseTemplatePath)) {
@@ -1060,7 +1099,7 @@ app.post('/api/buat_event', (req, res) => {
           filledTemplate = fillTemplate(template, parsed);
         } else {
           // Use base template if specific one is missing
-          const baseTemplateFile = path.join(process.cwd(), 'templates', instansi, 'event_template.txt');
+          const baseTemplateFile = path.join(getTemplatesDir(), instansi, 'event_template.txt');
           if (fs.existsSync(baseTemplateFile)) {
             const baseContent = fs.readFileSync(baseTemplateFile, 'utf-8');
             filledTemplate = fillTemplate(baseContent, parsed);
@@ -1106,7 +1145,7 @@ app.post('/api/buat_event', (req, res) => {
           filledTemplate = fillTemplate(template, parsed);
         } else {
           // Use base template if specific one is missing
-          const baseTemplateFile = path.join(process.cwd(), 'templates', instansi, 'event_template.txt');
+          const baseTemplateFile = path.join(getTemplatesDir(), instansi, 'event_template.txt');
           if (fs.existsSync(baseTemplateFile)) {
             const baseContent = fs.readFileSync(baseTemplateFile, 'utf-8');
             filledTemplate = fillTemplate(baseContent, parsed);
@@ -1123,7 +1162,7 @@ app.post('/api/buat_event', (req, res) => {
         });
       }
     } else {
-      const csvPath = path.join(process.cwd(), 'database', instansi, 'events_magnitude_list.csv');
+      const csvPath = path.join(getDatabaseDir(), instansi, 'events_magnitude_list.csv');
       const magMap = loadEventMagnitudes(csvPath);
 
       if (use_raw && raw_text) {
@@ -1137,7 +1176,7 @@ app.post('/api/buat_event', (req, res) => {
           const ticketId = (eventData.ticket_id || "").trim();
           const eventType = (eventData.event_type || "").trim();
 
-          const templatePath = path.join(process.cwd(), 'templates', instansi, `${eventName}.txt`);
+          const templatePath = path.join(getTemplatesDir(), instansi, `${eventName}.txt`);
           let filledTemplate = '';
 
           if (fs.existsSync(templatePath)) {
@@ -1193,7 +1232,7 @@ app.post('/api/buat_event', (req, res) => {
         };
 
         const eventName = (eventData.event_name || "").trim().replace(/^"|"$/g, '');
-        const templatePath = path.join(process.cwd(), 'templates', instansi, `${eventName}.txt`);
+        const templatePath = path.join(getTemplatesDir(), instansi, `${eventName}.txt`);
         let filledTemplate = '';
 
         if (fs.existsSync(templatePath)) {
@@ -1251,7 +1290,7 @@ app.post('/api/process', upload.single('file'), async (req, res, next) => {
 
     const fileExt = file ? file.originalname.split('.').pop()?.toLowerCase() : 'txt';
 
-    const baseDb = path.join(process.cwd(), 'database', instansi);
+    const baseDb = path.join(getDatabaseDir(), instansi);
     const magMap = loadEventMagnitudes(path.join(baseDb, 'events_magnitude_list.csv'));
     const validEvents = Object.keys(magMap); // or parsed csv names
     const fpEvents = loadFalsePositives(path.join(baseDb, 'False_Positive.txt'));
@@ -1442,7 +1481,7 @@ dimana terdeteksi aktivitas botnet domain sebagai berikut :
             filled = fillTemplate(templateContent, parsed);
           } else {
             // Use base template if specific one is missing
-            const baseTemplateFile = path.join(process.cwd(), 'templates', instansi, 'event_template.txt');
+            const baseTemplateFile = path.join(getTemplatesDir(), instansi, 'event_template.txt');
             if (fs.existsSync(baseTemplateFile)) {
               const baseContent = fs.readFileSync(baseTemplateFile, 'utf-8');
               filled = fillTemplate(baseContent, parsed);
@@ -1494,7 +1533,7 @@ dimana terdeteksi aktivitas botnet domain sebagai berikut :
               });
             } else {
               // Use base template if specific one is missing
-              const baseTemplateFile = path.join(process.cwd(), 'templates', instansi, 'event_template.txt');
+              const baseTemplateFile = path.join(getTemplatesDir(), instansi, 'event_template.txt');
               if (fs.existsSync(baseTemplateFile)) {
                 const baseContent = fs.readFileSync(baseTemplateFile, 'utf-8');
                 filled = fillTemplate(baseContent, {
@@ -1522,7 +1561,7 @@ dimana terdeteksi aktivitas botnet domain sebagai berikut :
           processLog.push(`📑 Event report files generated: ${resultFiles.length}`);
 
           // WhatsApp report generation
-          const waTemplatePath = path.join(process.cwd(), 'templates', instansi, `wa_template_${instansi}.txt`);
+          const waTemplatePath = path.join(getTemplatesDir(), instansi, `wa_template_${instansi}.txt`);
           let waText = '';
           
           const todayDateObj = new Date();
@@ -1619,7 +1658,7 @@ SOC Neotech`;
           const uniqueKey = `${eventName}_${ticketId}_${eventType}`;
           if (processedEventNames.has(uniqueKey)) continue;
 
-          const templateFile = path.join(process.cwd(), 'templates', instansi, `${eventName}.txt`);
+          const templateFile = path.join(getTemplatesDir(), instansi, `${eventName}.txt`);
           if (fs.existsSync(templateFile)) {
             const templateContent = fs.readFileSync(templateFile, 'utf-8');
             const filled = fillTemplate(templateContent, eventData, magMap);
@@ -1642,7 +1681,7 @@ SOC Neotech`;
         processLog.push(`📑 Event report files generated: ${resultFiles.length}`);
 
         // WhatsApp report generation
-        const waTemplatePath = path.join(process.cwd(), 'templates', instansi, `wa_template_${instansi}.txt`);
+        const waTemplatePath = path.join(getTemplatesDir(), instansi, `wa_template_${instansi}.txt`);
         if (fs.existsSync(waTemplatePath)) {
           const template = fs.readFileSync(waTemplatePath, 'utf-8');
           const shiftInfo = SHIFTS[shift];
