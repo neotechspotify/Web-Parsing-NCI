@@ -1304,6 +1304,38 @@ app.post('/api/process', upload.single('file'), async (req, res, next) => {
       const parsedData = parseCSV(rawContent);
       processLog.push(`✅ Berhasil mengurai ${parsedData.length} baris data CSV.`);
 
+      // Convert any ISO timestamp to WIB local format "M/D/YYYY h:mm:ss AM/PM" (matching Image 2)
+      const wibFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Jakarta',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+        hour12: true
+      });
+
+      parsedData.forEach(row => {
+        for (const key of Object.keys(row)) {
+          const val = row[key];
+          if (typeof val === 'string' && val.trim() !== '') {
+            const isIsoDate = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val);
+            if (isIsoDate) {
+              try {
+                const dateObj = new Date(val);
+                if (!isNaN(dateObj.getTime())) {
+                  const formatted = wibFormatter.format(dateObj).replace(',', '');
+                  row[key] = formatted;
+                }
+              } catch (err) {
+                // Ignore parsing errors
+              }
+            }
+          }
+        }
+      });
+
       // Check if this is a DGA or Botnet file
       const isDga = parsedData.length > 0 && (() => {
         const keys = Object.keys(parsedData[0]);
