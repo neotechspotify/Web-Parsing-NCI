@@ -47,6 +47,7 @@ export interface ProcessResult {
     downloadUrl: string;
     type: 'excel' | 'text' | 'wa';
     content?: string;
+    base64?: string;
   }[];
   aalPivotData?: {
     ip: string;

@@ -1813,6 +1813,21 @@ SOC Neotech`;
       processLog.push(`❌ Unknown file format: ${fileExt}`);
     }
 
+    // Populate base64 content for reliable serverless downloads
+    for (const f of resultFiles) {
+      try {
+        if (f.path && fs.existsSync(f.path)) {
+          const fileBuffer = fs.readFileSync(f.path);
+          f.base64 = fileBuffer.toString('base64');
+          if (f.type !== 'excel') {
+            f.content = fileBuffer.toString('utf-8');
+          }
+        }
+      } catch (err) {
+        console.error(`Error reading file for base64:`, err);
+      }
+    }
+
     res.json({
       success: true,
       message: "Proses selesai!",

@@ -30,6 +30,30 @@ import companyLogo from './assets/images/nci_shield_white_bg_1783343904191.jpg';
 import { LogEvent, ProcessResult } from './types';
 import AalPivotVisualizer from './components/AalPivotVisualizer';
 
+export const downloadSingleFile = (fileObj: { name: string; content?: string; base64?: string; type?: string }) => {
+  let blob: Blob;
+  if (fileObj.base64) {
+    const binaryString = window.atob(fileObj.base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const mimeType = fileObj.type === 'excel'
+      ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      : 'text/plain;charset=utf-8';
+    blob = new Blob([bytes], { type: mimeType });
+  } else {
+    blob = new Blob([fileObj.content || ''], { type: 'text/plain;charset=utf-8' });
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileObj.name;
+  link.click();
+  URL.revokeObjectURL(url);
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<'processor' | 'manual' | 'templates' | 'docs'>('processor');
   const [instansiList, setInstansiList] = useState<string[]>(['kemkes', 'kemtan', 'sophos', 'aal']);
@@ -517,13 +541,13 @@ function ProcessorTab({ instansiList, onProcessComplete }: { instansiList: strin
                         </div>
 
                         <div className="flex gap-2">
-                          <a
-                            href={fileObj.downloadUrl}
-                            className="flex-1 py-1 px-2.5 bg-slate-950 border border-slate-800 hover:bg-slate-900 rounded-lg text-[10px] font-semibold text-slate-200 flex items-center justify-center gap-1.5 transition-colors"
+                          <button
+                            onClick={() => downloadSingleFile(fileObj)}
+                            className="flex-1 py-1 px-2.5 bg-slate-950 border border-slate-800 hover:bg-slate-900 rounded-lg text-[10px] font-semibold text-slate-200 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                           >
                             <Download className="h-3 w-3 text-indigo-400" />
                             Download File
-                          </a>
+                          </button>
 
                           {fileObj.type === 'wa' && fileObj.content && (
                             <button
@@ -711,16 +735,6 @@ function ManualTab({
     } finally {
       setGenerating(false);
     }
-  };
-
-  const downloadSingleFile = (fileObj: { name: string; content: string }) => {
-    const blob = new Blob([fileObj.content], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileObj.name;
-    link.click();
-    URL.revokeObjectURL(url);
   };
 
   const copySingleFileToClipboard = async (content: string, index: number) => {
