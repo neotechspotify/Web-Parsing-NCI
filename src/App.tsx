@@ -651,7 +651,7 @@ function ManualTab({
   const handleTemplateSelect = async (templateName: string) => {
     if (!templateName) return;
     try {
-      const res = await fetch(`/api/templates/${instansi}/${templateName}`);
+      const res = await fetch(`/api/templates/${encodeURIComponent(instansi)}/${encodeURIComponent(templateName)}`);
       const data = await res.json();
       if (data && data.content) {
         setEventName(data.formattedName);
@@ -1398,7 +1398,7 @@ function TemplatesTab({
 
   const handlePreview = async (tName: string) => {
     try {
-      const res = await fetch(`/api/templates/${selectedInstansi}/${tName}`);
+      const res = await fetch(`/api/templates/${encodeURIComponent(selectedInstansi)}/${encodeURIComponent(tName)}`);
       const data = await res.json();
       if (data && data.content) {
         setActiveTemplate({
@@ -1419,7 +1419,7 @@ function TemplatesTab({
     if (!activeTemplate) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/templates/${activeTemplate.instansi}/${activeTemplate.name}`, {
+      const res = await fetch(`/api/templates/${encodeURIComponent(activeTemplate.instansi)}/${encodeURIComponent(activeTemplate.name)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: editedContent }),
@@ -1439,7 +1439,7 @@ function TemplatesTab({
   const handleDeleteTemplate = async () => {
     if (!activeTemplate) return;
     try {
-      const res = await fetch(`/api/templates/${activeTemplate.instansi}/${activeTemplate.name}`, {
+      const res = await fetch(`/api/templates/${encodeURIComponent(activeTemplate.instansi)}/${encodeURIComponent(activeTemplate.name)}`, {
         method: 'DELETE',
       });
       const data = await res.json();

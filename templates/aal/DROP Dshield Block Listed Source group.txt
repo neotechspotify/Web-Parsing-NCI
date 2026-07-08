@@ -1,0 +1,49 @@
+Dear Team AAL,
+
+Noted : IP source tersebut sudah kami block dari EDL.
+
+Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
+
+===============================
+
+Sec. Event : {event_type}
+Signature : DROP Dshield Block Listed Source group {event_id}
+Severity : {magnitude}
+Action : {action}
+Waktu Deteksi : {tanggal}, {waktu}
+===============================
+
+Deskripsi Event :
+Tim SOC mendeteksi adanya percobaan komunikasi anomali yang terjadi pada:
+
+source ip :
+{src_ip}
+
+source country :
+{src_country}
+
+destination ip :
+{dst_ip}
+({dst_country})
+
+destination port :
+{dst_port}
+
+===============================
+
+Event ini mendeteksi Ada perangkat dari luar jaringan mencoba membuat koneksi ke aset internal, dan IP sumber tersebut termasuk dalam blocklist reputasi buruk (DShield).
+
+===============================
+
+Mitigasi :
+- Lakukan pembatasan akses (ACL) agar hanya IP atau jaringan tertentu yang boleh mengakses service internal
+- Aktifkan rate-limit atau protection terhadap port scanning di perangkat keamanan jaringan
+- Pastikan sistem memiliki patch dan update keamanan terbaru
+- Secara teratur lakukan pemindaian terhadap sistem yang terekspos secara publik dan lakukan patching jika ditemukan kerentanan kritis.
+- Terapkan OS hardening.
+- Gunakan WAF untuk membatasi dan mencegah adanya usaha eksploitasi dari pihak luar
+
+===============================
+
+Terimakasih,
+SOC Neotech

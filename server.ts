@@ -395,6 +395,152 @@ function findTemplateFile(instansi: string, eventName: string): string | null {
   return null;
 }
 
+function findTemplateInRawText(instansi: string, rawText: string): string | null {
+  if (!rawText) return null;
+  const baseDir = path.join(getTemplatesDir(), instansi.toLowerCase());
+  if (!fs.existsSync(baseDir)) return null;
+
+  const files = fs.readdirSync(baseDir);
+  const sortedFiles = files
+    .filter(f => f !== 'event_template.txt' && !f.startsWith('wa_template_') && f.endsWith('.txt'))
+    .sort((a, b) => b.length - a.length);
+
+  const normalizedRaw = rawText.toLowerCase().replace(/\s+/g, ' ');
+
+  for (const file of sortedFiles) {
+    const templateName = file.replace(/\.txt$/i, '');
+    const cleanTemplateName = templateName.toLowerCase().replace(/\s+/g, ' ');
+    if (normalizedRaw.includes(cleanTemplateName)) {
+      return path.join(baseDir, file);
+    }
+  }
+  return null;
+}
+
+function applyHeuristicCorrections(eventData: any, rawLine: string, instansi: string): any {
+  let corrected = { ...eventData };
+
+  const isAal = instansi.toLowerCase() === 'aal';
+
+  if (isAal && rawLine.includes('\t')) {
+    const parts = rawLine.split('\t').map(p => p.trim());
+    if (parts.length >= 10) {
+      const cleanQuote = (q: string) => {
+        if (!q) return "";
+        let val = q.replace(/^"|"$/g, '').trim();
+        // replace literal \n or actual newlines with real newlines
+        val = val.replace(/\\n/g, '\n');
+        return val;
+      };
+
+      corrected.event_id = parts[0] || corrected.event_id;
+      corrected.analyst = parts[1] || corrected.analyst;
+      corrected.ticket_id = parts[2] || corrected.ticket_id;
+      corrected.alert_group = parts[2];
+      corrected.event_type = parts[3] || "Misc Attack"; // Sec. Event
+      
+      const matchedTemplateFile = findTemplateInRawText(instansi, rawLine);
+      if (matchedTemplateFile) {
+        corrected.event_name = path.basename(matchedTemplateFile, '.txt');
+      } else {
+        corrected.event_name = parts[4] || corrected.event_name;
+      }
+      
+      corrected.magnitude = parts[5] || corrected.magnitude; // Severity
+      corrected.tanggal = parts[6] || corrected.tanggal;
+      corrected.waktu = parts[7] || corrected.waktu;
+      corrected.action = parts[8] || corrected.action;
+      corrected.event_status = parts[9] || corrected.event_status;
+      corrected.traffic_flow = parts[10] || corrected.traffic_flow;
+      
+      if (parts.length > 11) corrected.src_ip = cleanQuote(parts[11]) || corrected.src_ip;
+      if (parts.length > 12) corrected.src_country = cleanQuote(parts[12]) || corrected.src_country;
+      if (parts.length > 13) corrected.dst_ip = cleanQuote(parts[13]) || corrected.dst_ip;
+      if (parts.length > 14) corrected.dst_port = cleanQuote(parts[14]) || corrected.dst_port;
+      if (parts.length > 15) {
+        corrected.dst_country = cleanQuote(parts[15]) || corrected.dst_country;
+        corrected.dst_desc = corrected.dst_country;
+      }
+      
+      return corrected;
+    }
+  }
+
+  // 1. Find correct event_name by matching against existing template files in the directory
+  const matchedTemplateFile = findTemplateInRawText(instansi, rawLine);
+  if (matchedTemplateFile) {
+    const templateName = path.basename(matchedTemplateFile, '.txt');
+    if (corrected.event_name && corrected.event_name !== templateName && !corrected.event_type) {
+      corrected.event_type = corrected.event_name;
+    }
+    corrected.event_name = templateName;
+  }
+
+  // Fallback to extract event_type from the rawLine if it's still empty
+  if (!corrected.event_type && rawLine) {
+    const parts = rawLine.split('\t');
+    for (const p of parts) {
+      const cleanPart = p.trim();
+      if (cleanPart && (cleanPart === 'Misc Attack' || cleanPart.toLowerCase().includes('attack') || cleanPart.toLowerCase().includes('exploit') || cleanPart.toLowerCase().includes('malware') || cleanPart.toLowerCase().includes('scanning'))) {
+        corrected.event_type = cleanPart;
+        break;
+      }
+    }
+  }
+
+  // 2. Extract quoted strings (which contain grouped IPs, countries, ports)
+  const quotes = rawLine.match(/"([^"]*)"/g);
+  if (quotes && quotes.length >= 4) {
+    const cleanQuote = (q: string) => q.replace(/^"|"$/g, '').trim().replace(/\s+/g, '\n');
+    corrected.src_ip = cleanQuote(quotes[0]);
+    corrected.src_country = cleanQuote(quotes[1]);
+    corrected.dst_ip = cleanQuote(quotes[2]);
+    corrected.dst_port = cleanQuote(quotes[3]);
+  } else {
+    const ipRegex = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g;
+    const ips = rawLine.match(ipRegex) || [];
+    if (ips.length > 0 && (!corrected.src_ip || corrected.src_ip === '-')) {
+      corrected.src_ip = ips[0];
+      if (ips.length > 1) {
+        corrected.dst_ip = ips.slice(1).join('\n');
+      }
+    }
+  }
+
+  // 3. Extract correct date and time
+  const dateRegex = /\b\d{2}[\/\-\.]\d{2}[\/\-\.]\d{4}\b/g;
+  const dates = rawLine.match(dateRegex) || [];
+  if (dates.length > 0) {
+    corrected.tanggal = dates[0];
+  }
+
+  const timeRegex = /\b\d{2}[:\.]\d{2}([:\.]\d{2})?\b/g;
+  const times = rawLine.match(timeRegex) || [];
+  if (times.length > 0) {
+    corrected.waktu = times[0];
+  }
+
+  // 4. Extract action
+  if (rawLine.toLowerCase().includes('block ip on edl')) {
+    corrected.action = 'Block IP on EDL';
+  } else if (rawLine.toLowerCase().includes('block')) {
+    corrected.action = 'Block';
+  } else if (rawLine.toLowerCase().includes('allowed') || rawLine.toLowerCase().includes('allow')) {
+    corrected.action = 'Allowed';
+  }
+
+  // 5. Severity/Magnitude
+  const severities = ['high', 'medium', 'low', 'critical'];
+  for (const sev of severities) {
+    if (rawLine.toLowerCase().includes(' ' + sev + ' ') || rawLine.toLowerCase().includes('\t' + sev + '\t')) {
+      corrected.magnitude = sev.charAt(0).toUpperCase() + sev.slice(1);
+      break;
+    }
+  }
+
+  return corrected;
+}
+
 // Data loaders
 function loadEventMagnitudes(csvPath: string): Record<string, number> {
   const mapping: Record<string, number> = {};
@@ -520,6 +666,7 @@ function parseTxtContent(content: string): any[] {
       };
 
       const event = {
+        _rawLine: row.join('\t'),
         event_id: getPart(0),
         analyst: getPart(1),
         ticket_id: getPart(2),
@@ -933,7 +1080,10 @@ function fillTemplate(templateContent: string, eventData: any, magMap?: Record<s
   const mergedData = { ...commonFallbacks, ...eventData };
 
   for (const [key, val] of Object.entries(mergedData)) {
-    const stringVal = val === null || val === undefined ? "-" : String(val);
+    let stringVal = val === null || val === undefined ? "-" : String(val);
+    // Strip trailing <br> tags to prevent trailing empty lines, then convert remaining <br> to newlines
+    stringVal = stringVal.replace(/<br\s*\/?>\s*$/gi, '');
+    stringVal = stringVal.replace(/<br\s*\/?>\n?/gi, '\n');
     filled = filled.replace(new RegExp(`{${key}}`, 'g'), stringVal);
   }
   
@@ -989,8 +1139,20 @@ app.get('/api/templates', (req, res) => {
       if (fs.statSync(dirPath).isDirectory()) {
         const files = fs.readdirSync(dirPath)
           .filter(f => f.endsWith('.txt') && f !== 'event_template.txt')
-          .map(f => f.replace('.txt', ''));
-        result[dir] = files.sort();
+          .map(f => {
+            const trimmed = f.trim();
+            if (trimmed !== f) {
+              try {
+                fs.renameSync(path.join(dirPath, f), path.join(dirPath, trimmed));
+              } catch (e) {
+                console.error(`Failed to rename spaced template ${f} to ${trimmed}`, e);
+              }
+              return trimmed.replace('.txt', '');
+            }
+            return f.replace('.txt', '');
+          });
+        // Sort case-insensitively
+        result[dir] = files.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
       }
     }
 
@@ -1053,7 +1215,8 @@ app.post('/api/templates/create', (req, res) => {
     return res.status(400).json({ error: 'Instansi and filename are required' });
   }
 
-  const cleanFilename = filename.toLowerCase().endsWith('.txt') ? filename : `${filename}.txt`;
+  const trimmedFilename = filename.trim();
+  const cleanFilename = trimmedFilename.toLowerCase().endsWith('.txt') ? trimmedFilename : `${trimmedFilename}.txt`;
   const baseTemplatePath = path.join(getTemplatesDir(), instansi, 'event_template.txt');
   const targetTemplatePath = path.join(getTemplatesDir(), instansi, cleanFilename);
 
@@ -1178,7 +1341,9 @@ app.post('/api/buat_event', (req, res) => {
 
       if (use_raw && raw_text) {
         const events = parseTxtContent(raw_text);
-        for (const eventData of events) {
+        for (let eventData of events) {
+          const lineText = eventData._rawLine || raw_text;
+          eventData = applyHeuristicCorrections(eventData, lineText, instansi);
           if (!eventData.magnitude && fields.severity) {
             eventData.magnitude = fields.severity;
           }
@@ -1187,17 +1352,26 @@ app.post('/api/buat_event', (req, res) => {
           const ticketId = (eventData.ticket_id || "").trim();
           const eventType = (eventData.event_type || "").trim();
 
-          const templatePath = path.join(getTemplatesDir(), instansi, `${eventName}.txt`);
+          let matchedFile = findTemplateInRawText(instansi, lineText);
+          if (!matchedFile && eventName) {
+            matchedFile = findTemplateFile(instansi, eventName);
+          }
+
           let filledTemplate = '';
 
-          if (fs.existsSync(templatePath)) {
-            const template = fs.readFileSync(templatePath, 'utf-8');
+          if (matchedFile) {
+            const template = fs.readFileSync(matchedFile, 'utf-8');
             filledTemplate = fillTemplate(template, eventData, magMap);
           } else {
-            // Fallback: list all event details
-            filledTemplate = Object.entries(eventData)
-              .map(([k, v]) => `${k}: ${v}`)
-              .join('\n');
+            const baseTemplateFile = path.join(getTemplatesDir(), instansi, 'event_template.txt');
+            if (fs.existsSync(baseTemplateFile)) {
+              const baseContent = fs.readFileSync(baseTemplateFile, 'utf-8');
+              filledTemplate = fillTemplate(baseContent, eventData, magMap);
+            } else {
+              filledTemplate = Object.entries(eventData)
+                .map(([k, v]) => `${k}: ${v}`)
+                .join('\n');
+            }
           }
 
           const outFileName = ticketId && eventType ? `${eventName}_${ticketId}_${eventType}.txt` : `${eventName}_Report.txt`;
@@ -1243,17 +1417,22 @@ app.post('/api/buat_event', (req, res) => {
         };
 
         const eventName = (eventData.event_name || "").trim().replace(/^"|"$/g, '');
-        const templatePath = path.join(getTemplatesDir(), instansi, `${eventName}.txt`);
+        let matchedFile = findTemplateFile(instansi, eventName);
         let filledTemplate = '';
 
-        if (fs.existsSync(templatePath)) {
-          const template = fs.readFileSync(templatePath, 'utf-8');
+        if (matchedFile) {
+          const template = fs.readFileSync(matchedFile, 'utf-8');
           filledTemplate = fillTemplate(template, eventData, magMap);
         } else {
-          // Fallback: list all event details
-          filledTemplate = Object.entries(eventData)
-            .map(([k, v]) => `${k}: ${v}`)
-            .join('\n');
+          const baseTemplateFile = path.join(getTemplatesDir(), instansi, 'event_template.txt');
+          if (fs.existsSync(baseTemplateFile)) {
+            const baseContent = fs.readFileSync(baseTemplateFile, 'utf-8');
+            filledTemplate = fillTemplate(baseContent, eventData, magMap);
+          } else {
+            filledTemplate = Object.entries(eventData)
+              .map(([k, v]) => `${k}: ${v}`)
+              .join('\n');
+          }
         }
 
         const outFileName = `${eventName}_Report.txt`;
