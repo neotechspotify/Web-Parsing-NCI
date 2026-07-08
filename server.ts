@@ -1438,6 +1438,21 @@ dimana terdeteksi aktivitas botnet domain sebagai berikut :
         fs.unlinkSync(file.path);
       }
 
+      // Populate base64 content for reliable downloads (especially for binary excel files)
+      for (const f of resultFiles) {
+        try {
+          if (f.path && fs.existsSync(f.path)) {
+            const fileBuffer = fs.readFileSync(f.path);
+            f.base64 = fileBuffer.toString('base64');
+            if (f.type !== 'excel') {
+              f.content = fileBuffer.toString('utf-8');
+            }
+          }
+        } catch (err) {
+          console.error(`Error reading AAL file for base64:`, err);
+        }
+      }
+
       return res.json({
         success: true,
         message: isDga ? "Proses file event DGA AAL selesai!" : "Proses file event AAL selesai!",
