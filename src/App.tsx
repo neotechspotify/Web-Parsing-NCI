@@ -56,7 +56,7 @@ export const downloadSingleFile = (fileObj: { name: string; content?: string; ba
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'processor' | 'manual' | 'templates' | 'docs'>('processor');
-  const [instansiList, setInstansiList] = useState<string[]>(['kemkes', 'kemtan', 'sophos', 'aal']);
+  const [instansiList, setInstansiList] = useState<string[]>(['kemkes', 'sophos', 'aal']);
   const [templates, setTemplates] = useState<Record<string, string[]>>({});
   const [loadingTemplates, setLoadingTemplates] = useState(false);
 
@@ -1503,7 +1503,7 @@ function TemplatesTab({
           </div>
           {/* Instansi Switcher */}
           <div className="flex bg-slate-950 p-1 rounded-md border border-slate-800">
-            {['kemkes', 'kemtan', 'sophos'].map((ins) => (
+            {['kemkes', 'sophos'].map((ins) => (
               <button
                 key={ins}
                 onClick={() => {
@@ -1576,7 +1576,6 @@ function TemplatesTab({
                 className="w-full bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-xs text-slate-300 focus:outline-none"
               >
                 <option value="kemkes">KEMKES</option>
-                <option value="kemtan">KEMTAN</option>
                 <option value="sophos">SOPHOS</option>
               </select>
 

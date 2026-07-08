@@ -974,6 +974,7 @@ app.get('/api/templates', (req, res) => {
     const directories = fs.readdirSync(baseDir);
 
     for (const dir of directories) {
+      if (dir.toLowerCase() === 'kemtan') continue; // Exclude KEMTAN
       const dirPath = path.join(baseDir, dir);
       if (fs.statSync(dirPath).isDirectory()) {
         const files = fs.readdirSync(dirPath)
@@ -1428,27 +1429,54 @@ Berikut kami lampirkan hasil dari monitoring/pivot data DGA AAL pada Shift ${shi
 dimana terdeteksi aktivitas DGA URL sebagai berikut :
 
 `;
-      } else {
-        waText = `Selamat Pagi Rekan - Rekan,
-
-Berikut kami lampirkan hasil dari monitoring/pivot data Botnet AAL pada Shift ${shift},
-dimana terdeteksi aktivitas botnet domain sebagai berikut :
-
-`;
-      }
-
-      aalPivotData.forEach(group => {
-        waText += `*IP: ${group.ip}* (Total: ${group.subtotal} deteksi)\n`;
-        group.domains.forEach(d => {
-          waText += ` - ${d.domain} (${d.count} event)\n`;
+        aalPivotData.forEach(group => {
+          waText += `*IP: ${group.ip}* (Total: ${group.subtotal} deteksi)\n`;
+          group.domains.forEach(d => {
+            waText += ` - ${d.domain} (${d.count} event)\n`;
+          });
+          waText += `\n`;
         });
-        waText += `\n`;
-      });
-
-      if (isDga) {
         waText += `Total Keseluruhan Event DGA: ${totalCount} event\n\nDemikian atas informasinya.\nTerimakasih,\nSOC Neotech`;
       } else {
-        waText += `Total Keseluruhan Event Botnet: ${totalCount} event\n\nDemikian atas informasinya.\nTerimakasih,\nSOC Neotech`;
+        // Collect unique domains from pivot table
+        const allDomains: string[] = [];
+        aalPivotData.forEach(group => {
+          group.domains.forEach(d => {
+            if (d.domain && typeof d.domain === 'string') {
+              allDomains.push(d.domain.trim());
+            }
+          });
+        });
+        const rawSelectedDomain = allDomains.length > 0 ? allDomains[Math.floor(Math.random() * allDomains.length)] : 'wwup.cc';
+        const cleanDomain = rawSelectedDomain.replace(/^(https?:\/\/)?(www\.)?/, '');
+        const destUrl = rawSelectedDomain.startsWith('http') ? rawSelectedDomain : `https://${rawSelectedDomain}`;
+
+        waText = `Subject: [SOC Report] URL belongs to an allowed category in policy (Allowed by Policy)
+
+Dear Team,
+Berikut kami lampirkan detail aktivitas akses ke domain berisiko tinggi (Newly Observed Domain) yang terdeteksi lolos (allowed) oleh Firewall.
+
+Ringkasan Temuan:
+* Event: URL belongs to an allowed category in policy
+* Total Event: ${totalCount}
+* Total Detected by Source IP: ${aalPivotData.length}
+* Dest. URL: ${destUrl}
+* Status: Allowed/Passthrough (Perlu penanganan segera)
+* Periode : 8 Jam
+
+Analisis Singkat: Trafik mengarah ke domain ${cleanDomain} yang baru saja didaftarkan/diamati. Pola nama domain yang acak mengindikasikan aktivitas Domain Generation Algorithm (DGA) yang umum digunakan malware untuk berkomunikasi dengan server Command & Control (C2).
+
+Rekomendasi Tindakan:
+* Block Domain: Segera tambahkan domain/IP tujuan ke dalam Blacklist Policy Firewall.
+* Endpoint Check: Lakukan pemeriksaan pada host terdampak untuk memastikan tidak ada background process mencurigakan.
+* Scan: Jalankan Full Scan EDR/AV pada endpoint.
+* Validasi: Pastikan user tidak mengakses link dari sumber yang tidak dikenal.
+* Memberikan edukasi kepada user / pengguna untuk tidak mengakses domain yang tidak dikenal.
+
+Detail event lengkap terlampir pada file Excel.
+
+Terima kasih.
+Regards, SOC Neotech`;
       }
 
       const waFileName = isDga ? `wa_aal_dga_shift${shift}.txt` : `wa_aal_shift${shift}.txt`;
