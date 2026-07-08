@@ -1809,7 +1809,9 @@ SOC Neotech`;
 
       const worksheet = XLSX.utils.json_to_sheet(rows);
       autoFitJsonColumns(worksheet, rows);
-      styleRawSheet(worksheet, rows);
+      if (instansi.toLowerCase() !== 'kemkes') {
+        styleRawSheet(worksheet, rows);
+      }
       addAutoFilter(worksheet, rows);
 
       const workbook = XLSX.utils.book_new();
