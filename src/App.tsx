@@ -798,7 +798,7 @@ function ManualTab({
                 onChange={(e) => setInstansi(e.target.value)}
                 className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 text-white font-medium"
               >
-                {instansiList.filter(ins => ins !== 'aal').map((ins) => (
+                {instansiList.map((ins) => (
                   <option key={ins} value={ins}>
                     {ins.toUpperCase()}
                   </option>
@@ -1503,7 +1503,7 @@ function TemplatesTab({
           </div>
           {/* Instansi Switcher */}
           <div className="flex bg-slate-950 p-1 rounded-md border border-slate-800">
-            {['kemkes', 'sophos'].map((ins) => (
+            {['kemkes', 'sophos', 'aal'].map((ins) => (
               <button
                 key={ins}
                 onClick={() => {
@@ -1577,6 +1577,7 @@ function TemplatesTab({
               >
                 <option value="kemkes">KEMKES</option>
                 <option value="sophos">SOPHOS</option>
+                <option value="aal">AAL</option>
               </select>
 
               <input

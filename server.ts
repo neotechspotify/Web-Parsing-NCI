@@ -609,7 +609,7 @@ function parseSophosDetailedLog(text: string): Record<string, string> {
     'operatingsystem', 'os', 'platform', 'sistemoperasi', 'sistem_operasi',
     'filename', 'processname', 'file', 'process', 'namafile', 'namaproses', 'nama_file', 'nama_proses',
     'filepath', 'path', 'processpath', 'lokasifile', 'pathfile', 'path_file', 'lokasi_file',
-    'commandline', 'cmdline', 'cmd', 'barisperintah', 'baris_perintah', 'parentcommandline', 'parentcmdline', 'parentcmd', 'parent_command_line',
+    'commandline', 'cmdline', 'cmd', 'barisperintah', 'baris_perintah', 'parentcommandline', 'parentcmdline', 'parentcmd', 'parent_command_line', 'processcommandline', 'processcmdline', 'processcommand', 'processcmd',
     'iocvalue', 'sha256', 'hash', 'filehash', 'nilaihash', 'nilai_hash',
     'action', 'remediation', 'actiontaken', 'tindakan', 'solusi', 'remediasi', 'tindakan_diambil'
   ]);
@@ -646,7 +646,17 @@ function parseSophosDetailedLog(text: string): Record<string, string> {
   }
 
   // 3. Try line-by-line parsing with intelligent same-line separators and known header lookup
-  if (Object.keys(rawPairs).length === 0) {
+  const hasValidHeader = Object.keys(rawPairs).some(k => {
+    const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return KNOWN_HEADERS.has(cleanK);
+  });
+
+  if (Object.keys(rawPairs).length === 0 || !hasValidHeader) {
+    if (!hasValidHeader) {
+      for (const k of Object.keys(rawPairs)) {
+        delete rawPairs[k];
+      }
+    }
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       let key = '';
@@ -723,7 +733,7 @@ function parseSophosDetailedLog(text: string): Record<string, string> {
     else if (k === 'processname' || k === 'filename' || k === 'file' || k === 'process' || k === 'namafile' || k === 'namaproses') data['file_name'] = val;
     else if (k === 'filepath' || k === 'path' || k === 'processpath' || k === 'lokasifile' || k === 'pathfile') data['file_path'] = val;
     else if (k === 'parentcommandline' || k === 'parentcmdline' || k === 'parentcmd' || k === 'parentcommandline') commandLineParent = val;
-    else if (k === 'commandline' || k === 'cmdline' || k === 'cmd' || k === 'barisperintah') commandLineStd = val;
+    else if (k === 'commandline' || k === 'cmdline' || k === 'cmd' || k === 'barisperintah' || k === 'processcommandline' || k === 'processcmdline' || k === 'processcommand' || k === 'processcmd') commandLineStd = val;
     else if (k === 'username' || k === 'accountname' || k === 'user' || k === 'account' || k === 'namaakun' || k === 'pengguna') data['username'] = val;
     else if (k === 'operatingsystem' || k === 'os' || k === 'platform' || k === 'sistemoperasi') data['operating_system'] = val;
     else if (k === 'iocvalue' || k === 'sha256' || k === 'hash' || k === 'filehash' || k === 'nilaihash') data['ioc_value'] = val;
