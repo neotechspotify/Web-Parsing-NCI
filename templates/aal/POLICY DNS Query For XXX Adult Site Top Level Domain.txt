@@ -28,9 +28,6 @@ Destination IP :
 Destination Port :
 {dst_port}
 
-Query :
-{query}
-
 URL/DNS :
 {url}
 
