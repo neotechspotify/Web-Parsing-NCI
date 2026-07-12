@@ -386,7 +386,7 @@ function findTemplateFile(instansi: string, eventName: string): string | null {
   const targetClean = eventName.toLowerCase().replace(/[^a-z0-9]/g, '');
   const files = fs.readdirSync(baseDir);
   for (const file of files) {
-    if (file === 'event_template.txt') continue;
+    if (file === 'event_template.txt' || file.startsWith('.') || fs.statSync(path.join(baseDir, file)).isDirectory()) continue;
     const fileClean = file.replace(/\.txt$/i, '').toLowerCase().replace(/[^a-z0-9]/g, '');
     if (fileClean === targetClean) {
       return path.join(baseDir, file);
@@ -402,13 +402,17 @@ function findTemplateInRawText(instansi: string, rawText: string): string | null
 
   const files = fs.readdirSync(baseDir);
   const sortedFiles = files
-    .filter(f => f !== 'event_template.txt' && !f.startsWith('wa_template_') && f.endsWith('.txt'))
+    .filter(f => {
+      if (f === 'event_template.txt' || f.startsWith('.') || f.startsWith('wa_template_')) return false;
+      if (fs.statSync(path.join(baseDir, f)).isDirectory()) return false;
+      return true;
+    })
     .sort((a, b) => b.length - a.length);
 
   const normalizedRaw = rawText.toLowerCase().replace(/\s+/g, ' ');
 
   for (const file of sortedFiles) {
-    const templateName = file.replace(/\.txt$/i, '');
+    const templateName = file.endsWith('.txt') ? file.replace(/\.txt$/i, '') : file;
     const cleanTemplateName = templateName.toLowerCase().replace(/\s+/g, ' ');
     if (normalizedRaw.includes(cleanTemplateName)) {
       return path.join(baseDir, file);
@@ -422,197 +426,208 @@ function applyHeuristicCorrections(eventData: any, rawLine: string, instansi: st
 
   const isAal = instansi.toLowerCase() === 'aal';
 
-  if (isAal && rawLine.includes('\t')) {
-    const parts = rawLine.split('\t').map(p => p.trim());
-    if (parts.length >= 10) {
-      const cleanQuote = (q: string) => {
-        if (!q) return "";
-        let val = q.replace(/^"|"$/g, '').trim();
-        val = val.replace(/\\n/g, '\n');
-        return val;
-      };
+  if (isAal) {
+    let parts = rawLine.split('\t').map(p => p.trim());
+    if (parts.length < 5) {
+      parts = rawLine.split(/ {2,}/).map(p => p.trim());
+    }
 
-      const suricataIdx = parts.indexOf('Suricata-Events');
-      if (suricataIdx !== -1 && parts.length > suricataIdx + 13) {
-        corrected.event_id = parts[0] || corrected.event_id;
-        corrected.analyst = parts[1] || corrected.analyst;
-        corrected.ticket_id = parts[2] || corrected.ticket_id;
-        corrected.alert_group = parts[4] || corrected.alert_group;
+    const cleanQuote = (q: string) => {
+      if (!q) return "";
+      let val = q.replace(/^"|"$/g, '').trim();
+      val = val.replace(/\\n/g, '\n');
+      return val;
+    };
+
+    // 1. Basic Fields (ID, Analyst, Ticket)
+    if (parts.length > 0) corrected.event_id = parts[0] || corrected.event_id;
+    if (parts.length > 1) corrected.analyst = parts[1] || corrected.analyst;
+    
+    // Find Suricata-Events or Alert Group index
+    const suricataIdx = parts.indexOf('Suricata-Events');
+    if (suricataIdx !== -1) {
+      corrected.ticket_id = parts[suricataIdx] || corrected.ticket_id;
+      if (parts.length > suricataIdx + 1) corrected.event_type = parts[suricataIdx + 1] || corrected.event_type;
+    }
+
+    // 2. Find template matching
+    const matchedTemplateFile = findTemplateInRawText(instansi, rawLine);
+    if (matchedTemplateFile) {
+      corrected.event_name = path.basename(matchedTemplateFile, '.txt').replace(/\.txt$/i, '');
+    } else {
+      if (suricataIdx !== -1 && parts.length > suricataIdx + 2) {
+        corrected.event_name = parts[suricataIdx + 2] || corrected.event_name;
+      } else if (parts.length > 4) {
+        corrected.event_name = parts[4] || corrected.event_name;
+      }
+    }
+
+    // 3. Robust IP & Connection details search (Independent of column offsets!)
+    const ipRegex = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/;
+    const ipFieldIndices: number[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      if (ipRegex.test(parts[i])) {
+        ipFieldIndices.push(i);
+      }
+    }
+
+    if (ipFieldIndices.length > 0) {
+      const srcIpIdx = ipFieldIndices[0];
+      corrected.src_ip = verticalize(cleanQuote(parts[srcIpIdx]));
+      
+      // Source country is the next non-empty field (if not another IP)
+      let nextIdx = srcIpIdx + 1;
+      while (nextIdx < parts.length && parts[nextIdx].trim() === '') {
+        nextIdx++;
+      }
+      if (nextIdx < parts.length && !ipRegex.test(parts[nextIdx])) {
+        corrected.src_country = cleanQuote(parts[nextIdx]);
+      }
+
+      // Find the destination IP field (the next field containing an IP)
+      const dstIpIdx = ipFieldIndices.find(idx => idx > srcIpIdx);
+      if (dstIpIdx !== undefined) {
+        corrected.dst_ip = verticalize(cleanQuote(parts[dstIpIdx]));
         
-        // Skip Suricata-Events and map the actual security event (e.g. "Misc Attack")
-        corrected.event_type = parts[suricataIdx + 1] || "Misc Attack";
-        
-        const matchedTemplateFile = findTemplateInRawText(instansi, rawLine);
-        if (matchedTemplateFile) {
-          corrected.event_name = path.basename(matchedTemplateFile, '.txt');
-        } else {
-          corrected.event_name = parts[suricataIdx + 2] || corrected.event_name;
+        // Destination port is typically the field after dst_ip
+        if (dstIpIdx + 1 < parts.length) {
+          corrected.dst_port = verticalize(cleanQuote(parts[dstIpIdx + 1]));
         }
-        
-        corrected.magnitude = parts[suricataIdx + 3] || corrected.magnitude;
-        corrected.tanggal = parts[suricataIdx + 4] || corrected.tanggal;
-        corrected.waktu = parts[suricataIdx + 5] || corrected.waktu;
-        corrected.action = parts[suricataIdx + 7] || corrected.action;
-        corrected.event_status = parts[suricataIdx + 8] || corrected.event_status;
-        corrected.traffic_flow = parts[suricataIdx + 9] || corrected.traffic_flow;
-        
-        if (corrected.event_status && (corrected.event_status.toLowerCase() === 'close' || corrected.event_status.toLowerCase() === 'closed')) {
-          corrected.action = 'Closed';
-        }
-        
-        corrected.src_ip = cleanQuote(parts[suricataIdx + 10]) || corrected.src_ip;
-        corrected.src_country = cleanQuote(parts[suricataIdx + 11]) || corrected.src_country;
-        corrected.dst_ip = cleanQuote(parts[suricataIdx + 12]) || corrected.dst_ip;
-        corrected.dst_port = cleanQuote(parts[suricataIdx + 13]) || corrected.dst_port;
-        
-        if (parts.length > suricataIdx + 14) {
-          corrected.dst_country = cleanQuote(parts[suricataIdx + 14]) || corrected.dst_country;
+        // Destination country is after dst_port
+        if (dstIpIdx + 2 < parts.length) {
+          corrected.dst_country = cleanQuote(parts[dstIpIdx + 2]);
           corrected.dst_desc = corrected.dst_country;
         }
-      } else {
-        if (parts.length >= 18) {
-          corrected.event_id = parts[0] || corrected.event_id;
-          corrected.analyst = parts[1] || corrected.analyst;
-          corrected.ticket_id = parts[2] || corrected.ticket_id;
-          corrected.alert_group = parts[4] || corrected.alert_group;
-          corrected.event_type = parts[5] || corrected.event_type || "Misc Attack";
-          
-          const matchedTemplateFile = findTemplateInRawText(instansi, rawLine);
-          if (matchedTemplateFile) {
-            corrected.event_name = path.basename(matchedTemplateFile, '.txt');
-          } else {
-            corrected.event_name = parts[6] || corrected.event_name;
-          }
-          
-          corrected.magnitude = parts[7] || corrected.magnitude;
-          corrected.tanggal = parts[8] || corrected.tanggal;
-          corrected.waktu = parts[9] || corrected.waktu;
-          corrected.action = parts[11] || corrected.action;
-          corrected.event_status = parts[12] || corrected.event_status;
-          corrected.traffic_flow = parts[13] || corrected.traffic_flow;
-          
-          if (corrected.event_status && (corrected.event_status.toLowerCase() === 'close' || corrected.event_status.toLowerCase() === 'closed')) {
-            corrected.action = 'Closed';
-          }
-          
-          corrected.src_ip = cleanQuote(parts[14]) || corrected.src_ip;
-          corrected.src_country = cleanQuote(parts[15]) || corrected.src_country;
-          corrected.dst_ip = cleanQuote(parts[16]) || corrected.dst_ip;
-          corrected.dst_port = cleanQuote(parts[17]) || corrected.dst_port;
-          if (parts.length > 18) {
-            corrected.dst_country = cleanQuote(parts[18]) || corrected.dst_country;
-            corrected.dst_desc = corrected.dst_country;
-          }
-        } else {
-          corrected.event_id = parts[0] || corrected.event_id;
-          corrected.analyst = parts[1] || corrected.analyst;
-          corrected.ticket_id = parts[2] || corrected.ticket_id;
-          corrected.alert_group = parts[2];
-          corrected.event_type = parts[3] || "Misc Attack";
-          
-          const matchedTemplateFile = findTemplateInRawText(instansi, rawLine);
-          if (matchedTemplateFile) {
-            corrected.event_name = path.basename(matchedTemplateFile, '.txt');
-          } else {
-            corrected.event_name = parts[4] || corrected.event_name;
-          }
-          
-          corrected.magnitude = parts[5] || corrected.magnitude;
-          corrected.tanggal = parts[6] || corrected.tanggal;
-          corrected.waktu = parts[7] || corrected.waktu;
-          corrected.action = parts[8] || corrected.action;
-          corrected.event_status = parts[9] || corrected.event_status;
-          corrected.traffic_flow = parts[10] || corrected.traffic_flow;
-          
-          if (corrected.event_status && (corrected.event_status.toLowerCase() === 'close' || corrected.event_status.toLowerCase() === 'closed')) {
-            corrected.action = 'Closed';
-          }
-          
-          if (parts.length > 11) corrected.src_ip = cleanQuote(parts[11]) || corrected.src_ip;
-          if (parts.length > 12) corrected.src_country = cleanQuote(parts[12]) || corrected.src_country;
-          if (parts.length > 13) corrected.dst_ip = cleanQuote(parts[13]) || corrected.dst_ip;
-          if (parts.length > 14) corrected.dst_port = cleanQuote(parts[14]) || corrected.dst_port;
-          if (parts.length > 15) {
-            corrected.dst_country = cleanQuote(parts[15]) || corrected.dst_country;
-            corrected.dst_desc = corrected.dst_country;
-          }
+      }
+    }
+
+    // 4. Map other metadata fields using patterns
+    // Severity
+    const severities = ['high', 'medium', 'low', 'critical'];
+    const foundSeverity = parts.find(p => severities.includes(p.toLowerCase()));
+    if (foundSeverity) {
+      corrected.magnitude = foundSeverity.charAt(0).toUpperCase() + foundSeverity.slice(1).toLowerCase();
+    } else if (suricataIdx !== -1 && parts.length > suricataIdx + 3) {
+      corrected.magnitude = parts[suricataIdx + 3] || corrected.magnitude;
+    }
+
+    // Date
+    const foundDate = parts.find(p => /\b\d{2}[\/\-\.]\d{2}[\/\-\.]\d{4}\b/.test(p));
+    if (foundDate) {
+      corrected.tanggal = foundDate;
+    } else if (suricataIdx !== -1 && parts.length > suricataIdx + 4) {
+      corrected.tanggal = parts[suricataIdx + 4] || corrected.tanggal;
+    }
+
+    // Time
+    const timeFields = parts.filter(p => /\b\d{1,2}[:\.]\d{2}([:\.]\d{2})?\b/.test(p));
+    if (timeFields.length > 0) {
+      corrected.waktu = timeFields[0];
+    } else if (suricataIdx !== -1 && parts.length > suricataIdx + 5) {
+      corrected.waktu = parts[suricataIdx + 5] || corrected.waktu;
+    }
+
+    // Action, Status, Traffic Flow
+    const foundAction = parts.find(p => p.toLowerCase().includes('block ip on edl') || p.toLowerCase().includes('block') || p.toLowerCase().includes('allow') || p.toLowerCase() === 'close');
+    if (foundAction) {
+      corrected.action = foundAction;
+    } else if (suricataIdx !== -1 && parts.length > suricataIdx + 7) {
+      corrected.action = parts[suricataIdx + 7] || corrected.action;
+    }
+
+    const foundStatus = parts.find(p => p.toLowerCase() === 'close' || p.toLowerCase() === 'closed' || p.toLowerCase() === 'open');
+    if (foundStatus) {
+      corrected.event_status = foundStatus;
+      if (foundStatus.toLowerCase() === 'close' || foundStatus.toLowerCase() === 'closed') {
+        // Only set action to Closed if there isn't already a more specific action
+        if (!corrected.action || corrected.action === '-' || corrected.action.toLowerCase() === 'close' || corrected.action.toLowerCase() === 'closed') {
+          corrected.action = 'Closed';
         }
       }
+    } else if (suricataIdx !== -1 && parts.length > suricataIdx + 8) {
+      corrected.event_status = parts[suricataIdx + 8] || corrected.event_status;
+    }
+
+    const foundFlow = parts.find(p => p.toLowerCase().includes('to private') || p.toLowerCase().includes('to public') || p.toLowerCase().includes('internal'));
+    if (foundFlow) {
+      corrected.traffic_flow = foundFlow;
+    } else if (suricataIdx !== -1 && parts.length > suricataIdx + 9) {
+      corrected.traffic_flow = parts[suricataIdx + 9] || corrected.traffic_flow;
+    }
       
-      // 6. Intelligent Domain/URL & Query heuristics (run inside AAL block too!)
-      const isLikelyDomainOrUrl = (str: string): boolean => {
-        if (!str) return false;
-        const clean = str.trim();
-        if (clean.includes(' ') || clean.includes('\t')) return false;
-        if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(clean)) return false;
-        if (clean.toLowerCase().startsWith('http://') || clean.toLowerCase().startsWith('https://')) return true;
-        return /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,12}(\/.*)?$/.test(clean);
-      };
+    // 6. Intelligent Domain/URL & Query heuristics (run inside AAL block too!)
+    const isLikelyDomainOrUrl = (str: string): boolean => {
+      if (!str) return false;
+      const clean = str.trim();
+      if (clean.includes(' ') || clean.includes('\t')) return false;
+      if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(clean)) return false;
+      if (clean.toLowerCase().startsWith('http://') || clean.toLowerCase().startsWith('https://')) return true;
+      return /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,12}(\/.*)?$/.test(clean);
+    };
 
-      const lineParts = rawLine.split(/[\s\t]+/).map(p => p.trim());
-      let foundDomain = lineParts.find(p => isLikelyDomainOrUrl(p));
+    const lineParts = rawLine.split(/[\s\t]+/).map(p => p.trim());
+    let foundDomain = lineParts.find(p => isLikelyDomainOrUrl(p));
 
-      if (!foundDomain && rawLine.includes('\t')) {
-        const tsvParts = rawLine.split('\t').map(p => p.trim());
-        foundDomain = tsvParts.find(p => isLikelyDomainOrUrl(p));
-      }
+    if (!foundDomain && rawLine.includes('\t')) {
+      const tsvParts = rawLine.split('\t').map(p => p.trim());
+      foundDomain = tsvParts.find(p => isLikelyDomainOrUrl(p));
+    }
 
-      // If a field got a domain due to column shifting, prioritize that!
-      const shiftKeys = ['src_country', 'dst_port', 'dst_country'];
-      for (const key of shiftKeys) {
-        if (corrected[key] && isLikelyDomainOrUrl(corrected[key])) {
-          foundDomain = corrected[key].trim();
-          corrected[key] = '-'; // reset the shifted field
-          if (key === 'dst_country') {
-            corrected.dst_desc = '-';
-          }
+    // If a field got a domain due to column shifting, prioritize that!
+    const shiftKeys = ['src_country', 'dst_port', 'dst_country'];
+    for (const key of shiftKeys) {
+      if (corrected[key] && isLikelyDomainOrUrl(corrected[key])) {
+        foundDomain = corrected[key].trim();
+        corrected[key] = '-'; // reset the shifted field
+        if (key === 'dst_country') {
+          corrected.dst_desc = '-';
         }
       }
+    }
 
-      if (foundDomain) {
-        if (!corrected.url || corrected.url === '-' || corrected.url === '') {
-          corrected.url = foundDomain;
-        }
-        if (!corrected.query || corrected.query === '-' || corrected.query === '') {
-          corrected.query = foundDomain;
-        }
+    if (foundDomain) {
+      if (!corrected.url || corrected.url === '-' || corrected.url === '') {
+        corrected.url = foundDomain;
       }
+      if (!corrected.query || corrected.query === '-' || corrected.query === '') {
+        corrected.query = foundDomain;
+      }
+    }
 
-      // Correct IP Port split issues (e.g. "8.8.8.8 53")
-      const ipPortPattern = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+(\d+)$/;
-      const foundIpPortPart = lineParts.find(p => ipPortPattern.test(p));
-      if (foundIpPortPart) {
-        const match = foundIpPortPart.match(ipPortPattern);
-        if (match) {
-          corrected.dst_ip = match[1];
-          corrected.dst_port = match[2];
-        }
-      } else {
-        for (const key of ['src_country', 'dst_ip', 'dst_port', 'dst_country']) {
-          if (corrected[key] && ipPortPattern.test(corrected[key].trim())) {
-            const match = corrected[key].trim().match(ipPortPattern);
-            if (match) {
-              corrected.dst_ip = match[1];
-              corrected.dst_port = match[2];
-              if (key !== 'dst_ip' && key !== 'dst_port') {
-                corrected[key] = '-';
-              }
+    // Correct IP Port split issues (e.g. "8.8.8.8 53")
+    const ipPortPattern = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+(\d+)$/;
+    const foundIpPortPart = lineParts.find(p => ipPortPattern.test(p));
+    if (foundIpPortPart) {
+      const match = foundIpPortPart.match(ipPortPattern);
+      if (match) {
+        corrected.dst_ip = match[1];
+        corrected.dst_port = match[2];
+      }
+    } else {
+      for (const key of ['src_country', 'dst_ip', 'dst_port', 'dst_country']) {
+        if (corrected[key] && ipPortPattern.test(corrected[key].trim())) {
+          const match = corrected[key].trim().match(ipPortPattern);
+          if (match) {
+            corrected.dst_ip = match[1];
+            corrected.dst_port = match[2];
+            if (key !== 'dst_ip' && key !== 'dst_port') {
+              corrected[key] = '-';
             }
           }
         }
       }
-
-      // If dst_ip is country-like due to shift, move it to country
-      if (corrected.dst_ip && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(corrected.dst_ip)) {
-        if (corrected.dst_ip === 'United States' || corrected.dst_ip === 'ID' || corrected.dst_ip === 'Indonesia') {
-          corrected.dst_country = corrected.dst_ip;
-          corrected.dst_desc = corrected.dst_ip;
-          corrected.dst_ip = '-';
-        }
-      }
-
-      return corrected;
     }
+
+    // If dst_ip is country-like due to shift, move it to country
+    if (corrected.dst_ip && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(corrected.dst_ip)) {
+      if (corrected.dst_ip === 'United States' || corrected.dst_ip === 'ID' || corrected.dst_ip === 'Indonesia') {
+        corrected.dst_country = corrected.dst_ip;
+        corrected.dst_desc = corrected.dst_ip;
+        corrected.dst_ip = '-';
+      }
+    }
+
+    return corrected;
   }
 
   // 1. Find correct event_name by matching against existing template files in the directory
@@ -821,6 +836,42 @@ function parseTSV(text: string): string[][] {
   }
   
   return result;
+}
+
+function preprocessMultilineLog(text: string): string {
+  if (!text) return "";
+  const lines = text.split(/\r?\n/);
+  const resultLines: string[] = [];
+  let insideQuotes = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Count quotes in the line to see if state toggles
+    const quoteCount = (line.match(/"/g) || []).length;
+    
+    // Check if the line starts with a number representing an Event ID
+    const startsWithNumber = /^\s*\d+(\s|\t|$)/.test(line);
+
+    if (insideQuotes) {
+      // We are inside a quoted field, so we MUST append with a newline \n to keep the multiline cell intact!
+      const lastLineIdx = resultLines.length - 1;
+      resultLines[lastLineIdx] = resultLines[lastLineIdx] + '\n' + line;
+    } else if (startsWithNumber || resultLines.length === 0) {
+      resultLines.push(line);
+    } else {
+      // We are outside quotes and the line doesn't start with a number.
+      // Append with space to avoid creating artificial columns
+      const lastLineIdx = resultLines.length - 1;
+      resultLines[lastLineIdx] = resultLines[lastLineIdx] + ' ' + line;
+    }
+
+    if (quoteCount % 2 !== 0) {
+      insideQuotes = !insideQuotes;
+    }
+  }
+  return resultLines.join('\n');
 }
 
 function parseTxtContent(content: string): any[] {
@@ -1295,6 +1346,16 @@ function cleanShiftFolder(outputDir: string, shiftKey: string): string {
   return shiftOutdir;
 }
 
+function getTemplateFilePath(instansi: string, name: string): string {
+  const dir = path.join(getTemplatesDir(), instansi);
+  const pathNoExt = path.join(dir, name);
+  const pathWithExt = path.join(dir, `${name}.txt`);
+  if (fs.existsSync(pathNoExt) && !fs.statSync(pathNoExt).isDirectory()) {
+    return pathNoExt;
+  }
+  return pathWithExt;
+}
+
 // API Routes
 app.get('/api/templates', (req, res) => {
   try {
@@ -1311,7 +1372,12 @@ app.get('/api/templates', (req, res) => {
       const dirPath = path.join(baseDir, dir);
       if (fs.statSync(dirPath).isDirectory()) {
         const files = fs.readdirSync(dirPath)
-          .filter(f => f.endsWith('.txt') && f !== 'event_template.txt')
+          .filter(f => {
+            const fullPath = path.join(dirPath, f);
+            if (fs.statSync(fullPath).isDirectory()) return false;
+            if (f === 'event_template.txt' || f === '.DS_Store' || f.startsWith('.')) return false;
+            return true;
+          })
           .map(f => {
             const trimmed = f.trim();
             if (trimmed !== f) {
@@ -1320,9 +1386,9 @@ app.get('/api/templates', (req, res) => {
               } catch (e) {
                 console.error(`Failed to rename spaced template ${f} to ${trimmed}`, e);
               }
-              return trimmed.replace('.txt', '');
+              return trimmed.endsWith('.txt') ? trimmed.replace(/\.txt$/i, '') : trimmed;
             }
-            return f.replace('.txt', '');
+            return f.endsWith('.txt') ? f.replace(/\.txt$/i, '') : f;
           });
         // Sort case-insensitively
         result[dir] = files.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
@@ -1337,7 +1403,7 @@ app.get('/api/templates', (req, res) => {
 
 app.get('/api/templates/:instansi/:name', (req, res) => {
   const { instansi, name } = req.params;
-  const filePath = path.join(getTemplatesDir(), instansi, `${name}.txt`);
+  const filePath = getTemplateFilePath(instansi, name);
 
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'Template not found' });
@@ -1354,7 +1420,7 @@ app.get('/api/templates/:instansi/:name', (req, res) => {
 app.post('/api/templates/:instansi/:name', (req, res) => {
   const { instansi, name } = req.params;
   const { content } = req.body;
-  const filePath = path.join(getTemplatesDir(), instansi, `${name}.txt`);
+  const filePath = getTemplateFilePath(instansi, name);
 
   try {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -1367,7 +1433,7 @@ app.post('/api/templates/:instansi/:name', (req, res) => {
 
 app.delete('/api/templates/:instansi/:name', (req, res) => {
   const { instansi, name } = req.params;
-  const filePath = path.join(getTemplatesDir(), instansi, `${name}.txt`);
+  const filePath = getTemplateFilePath(instansi, name);
 
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'Template not found' });
@@ -1513,7 +1579,8 @@ app.post('/api/buat_event', (req, res) => {
       const magMap = loadEventMagnitudes(csvPath);
 
       if (use_raw && raw_text) {
-        const events = parseTxtContent(raw_text);
+        const cleanedRawText = preprocessMultilineLog(raw_text);
+        const events = parseTxtContent(cleanedRawText);
         for (let eventData of events) {
           const lineText = eventData._rawLine || raw_text;
           eventData = applyHeuristicCorrections(eventData, lineText, instansi);
