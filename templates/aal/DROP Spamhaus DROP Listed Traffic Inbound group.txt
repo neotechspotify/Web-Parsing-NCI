@@ -41,7 +41,6 @@ Mitigasi :
 - Periksa apakah ip yang mengakses terdaftar pada whitelist.
 - Lakukan Bloking jika ip public terdeteksi sebagai bad reputation.
 - Terapkan policy deny untuk IP dengan reputasi buruk (Spamhaus DROP)
-
 ===============================
 
 Terimakasih,
