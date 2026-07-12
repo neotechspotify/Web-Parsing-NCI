@@ -30,16 +30,279 @@ function copyFolderSync(from: string, to: string) {
   }
 }
 
+function ensureDefaultTemplates(baseDir: string) {
+  const aalDir = path.join(baseDir, 'aal');
+  if (!fs.existsSync(aalDir)) {
+    fs.mkdirSync(aalDir, { recursive: true });
+  }
+
+  const dshieldContent = `Dear Team AAL,
+
+Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
+
+===============================
+
+Sec. Event : {event_type}
+Signature : {event_name}
+Severity : {magnitude}
+Action : {action}
+Waktu Deteksi : {tanggal}, {waktu}
+
+===============================
+
+Deskripsi Event :
+Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada
+
+Source IP :
+{src_ip}
+
+Source Country :
+{src_country}
+
+Destinatio IP : 
+{dst_ip}
+({dst_desc})
+
+Destination Port :
+{dst_port} 
+
+Query :
+{query}
+
+URL/DNS :
+{url}
+
+===============================
+
+Event ini mendeteksi Ada perangkat dari luar jaringan mencoba membuat koneksi ke aset internal, dan IP sumber tersebut termasuk dalam blocklist reputasi buruk (DShield).
+
+===============================
+
+Mitigasi :
+- Lakukan pembatasan akses (ACL) agar hanya IP atau jaringan tertentu yang boleh mengakses service internal
+- Aktifkan rate-limit atau protection terhadap port scanning di perangkat keamanan jaringan
+- Pastikan sistem memiliki patch dan update keamanan terbaru
+- Secara teratur lakukan pemindaian terhadap sistem yang terekspos secara publik dan lakukan patching jika ditemukan kerentanan kritis.
+- Terapkan OS hardening.
+- Gunakan WAF untuk membatasi dan mencegah adanya usaha eksploitasi dari pihak luar
+
+===============================
+
+Terimakasih,
+SOC Neotech`;
+
+  const spamhausContent = `Dear Team AAL,
+
+Noted : IP source tersebut sudah kami block dari EDL.
+
+Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
+
+===============================
+
+Sec. Event : {event_type}
+Signature : {event_name}
+Severity : {magnitude}
+Action : {action}
+Waktu Deteksi : {tanggal}, {waktu}
+
+===============================
+
+Deskripsi Event :
+Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada
+
+Source IP :
+{src_ip}
+
+Source Country :
+{src_country}
+
+Destination IP : 
+{dst_ip}
+({dst_desc})
+
+Destination Port :
+{dst_port}
+
+===============================
+
+Event ini terjadi karena pada ip source tercatat pada Spamhaus DROP (Don't Route Or Peer), di mana daftar tersebut berisi network yang telah dibajak atau dikendalikan sepenuhnya oleh sindikat kriminal (seperti spammer atau malware operators). IP dalam daftar ini memiliki reputasi yang sangat buruk dan sering digunakan untuk aktivitas berbahaya atau upaya eksploitasi sistem.
+
+===============================
+
+Mitigasi :
+- Periksa apakah ip yang mengakses terdaftar pada whitelist.
+- Lakukan Bloking jika ip public terdeteksi sebagai bad reputation.
+- Terapkan policy deny untuk IP dengan reputasi buruk (Spamhaus DROP)
+
+===============================
+
+Terimakasih,
+SOC Neotech`;
+
+  const adultContent = `Dear Team AAL,
+
+Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
+
+===============================
+
+Sec. Event : {event_type}
+Signature : {event_name}
+Severity : {magnitude}
+Action : {action}
+Waktu Deteksi : {tanggal}, {waktu}
+
+===============================
+
+Deskripsi Event :
+Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada
+
+Source IP :
+{src_ip}
+
+Source Country :
+{src_country}
+
+Destination IP : 
+{dst_ip}
+({dst_desc})
+
+Destination Port :
+{dst_port}
+
+URL/DNS :
+{url}
+
+===============================
+
+Alert ini tidak menunjukkan indikasi serangan atau malware, melainkan mengindikasikan akses atau percobaan akses ke domain dengan konten dewasa (.xxx) yang melanggar kebijakan penggunaan jaringan organisasi. Aktivitas bersifat policy violation dan bukan ancaman teknis langsung terhadap keamanan sistem.
+
+===============================
+
+Mitigasi :
+- Lakukan blokir domain jika terindikasi malicious 
+- Menerapkan Rules Restricted Outbound pada firewall untuk spesifik App yang sering menjadi jalur komunikasi Malicious Software. Seperti SMB, dll.
+
+===============================
+
+Terimakasih,
+SOC Neotech`;
+
+  const eventTemplateContent = `Dear Team AAL,
+
+Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
+
+===============================
+
+Sec. Event : {event_type}
+Signature : {event_name}
+Severity : {magnitude}
+Action : {action}
+Waktu Deteksi : {tanggal}, {waktu}
+
+===============================
+
+Deskripsi Event :
+Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada
+
+source ip :
+{src_ip}
+
+source country :
+{src_country}
+
+dst ip : 
+{dst_ip}
+({dst_desc})
+
+dst port :
+{dst_port}
+
+dst country :
+{dst_country}
+
+Query :
+{query}
+
+URL/DNS :
+{url}
+
+===============================
+
+{deskripsi}
+
+===============================
+
+Mitigasi :
+{mitigasi}
+
+===============================
+
+Terimakasih,
+SOC AAL`;
+
+  const waTemplateContent = `{salam} Rekan - Rekan,
+
+Berikut kami lampirkan hasil dari monitoring pada tanggal {tanggal} {jam}, dimana pada Platform mendeteksi adanya event sebagai berikut :
+
+A. Offenses :
+{offenses}
+
+B. Log Activity :
+{log_activity}
+
+
+Terimakasih,
+SOC Neotech`;
+
+  const files = {
+    'DROP Dshield Block Listed Source group.txt': dshieldContent,
+    'DROP Spamhaus DROP Listed Traffic Inbound group.txt': spamhausContent,
+    'POLICY DNS Query For XXX Adult Site Top Level Domain.txt': adultContent,
+    'event_template.txt': eventTemplateContent,
+    'wa_template_aal.txt': waTemplateContent,
+  };
+
+  for (const [filename, content] of Object.entries(files)) {
+    const filePath = path.join(aalDir, filename);
+    if (!fs.existsSync(filePath)) {
+      try {
+        fs.writeFileSync(filePath, content.trim() + '\n', 'utf-8');
+        console.log(`Recreated missing AAL template: ${filename}`);
+      } catch (e) {
+        console.error(`Failed to write fallback template ${filename}:`, e);
+      }
+    }
+  }
+}
+
 // Dynamically resolve templates and database folders to writable /tmp on Vercel
 function getTemplatesDir(): string {
+  let dir: string;
   if (process.env.VERCEL) {
     const tmpTemplates = '/tmp/templates';
     if (!fs.existsSync(tmpTemplates)) {
       copyFolderSync(path.join(process.cwd(), 'templates'), tmpTemplates);
     }
-    return tmpTemplates;
+    dir = tmpTemplates;
+  } else {
+    dir = path.join(process.cwd(), 'templates');
   }
-  return path.join(process.cwd(), 'templates');
+
+  // Always ensure default templates exist in the active templates directory
+  try {
+    ensureDefaultTemplates(dir);
+  } catch (err) {
+    console.error('Error ensuring default templates in active directory:', err);
+  }
+
+  // Also try to write them to the local templates folder so they are kept in git repository
+  try {
+    ensureDefaultTemplates(path.join(process.cwd(), 'templates'));
+  } catch (err) {
+    // safe to ignore if read-only
+  }
+
+  return dir;
 }
 
 function getDatabaseDir(): string {
