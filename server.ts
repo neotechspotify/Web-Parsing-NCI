@@ -1388,8 +1388,8 @@ app.post('/api/templates/create', (req, res) => {
     return res.status(400).json({ error: 'Instansi and filename are required' });
   }
 
-  const trimmedFilename = filename.trim();
-  const cleanFilename = trimmedFilename.toLowerCase().endsWith('.txt') ? trimmedFilename : `${trimmedFilename}.txt`;
+  const sanitizedFilename = filename.trim().replace(/[\/\\]/g, '-');
+  const cleanFilename = sanitizedFilename.toLowerCase().endsWith('.txt') ? sanitizedFilename : `${sanitizedFilename}.txt`;
   const baseTemplatePath = path.join(getTemplatesDir(), instansi, 'event_template.txt');
   const targetTemplatePath = path.join(getTemplatesDir(), instansi, cleanFilename);
 
