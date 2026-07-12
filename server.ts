@@ -65,6 +65,12 @@ function autoFitJsonColumns(worksheet: XLSX.WorkSheet, data: any[]) {
         maxLen = Math.max(maxLen, String(val).length);
       }
     }
+    // Limit specific wide columns to avoid excessively wide columns in Excel
+    if (key === 'escapedFormattedOffenseSource') {
+      maxLen = Math.min(maxLen, 30);
+    } else if (key === 'description') {
+      maxLen = Math.min(maxLen, 40);
+    }
     return maxLen;
   });
   worksheet['!cols'] = colWidths.map(w => ({ wch: Math.max(w + 3, 10) }));
