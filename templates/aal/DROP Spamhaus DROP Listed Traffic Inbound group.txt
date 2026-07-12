@@ -7,7 +7,7 @@ Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilak
 ===============================
 
 Sec. Event : {event_type}
-Signature : DROP Spamhaus DROP Listed Traffic Inbound group {event_id}
+Signature : {event_name}
 Severity : {magnitude}
 Action : {action}
 Waktu Deteksi : {tanggal}, {waktu}
@@ -18,14 +18,14 @@ Deskripsi Event :
 Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada
 
 source ip :
-{src_ip}	
+{src_ip}
 
 source country :
 {src_country}
 
 dst ip : 
 {dst_ip}
-(LAN & WLAN Endpoint User/Client)
+({dst_desc})
 
 dst port :
 {dst_port}

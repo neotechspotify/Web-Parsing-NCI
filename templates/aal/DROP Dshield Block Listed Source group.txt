@@ -1,20 +1,19 @@
 Dear Team AAL,
 
-Noted : IP source tersebut sudah kami block dari EDL.
-
 Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
 
 ===============================
 
 Sec. Event : {event_type}
-Signature : DROP Dshield Block Listed Source group {event_id}
+Signature : {event_name}
 Severity : {magnitude}
 Action : {action}
 Waktu Deteksi : {tanggal}, {waktu}
+
 ===============================
 
 Deskripsi Event :
-Tim SOC mendeteksi adanya percobaan komunikasi anomali yang terjadi pada:
+Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada
 
 source ip :
 {src_ip}
@@ -22,12 +21,18 @@ source ip :
 source country :
 {src_country}
 
-destination ip :
+dst ip : 
 {dst_ip}
-({dst_country})
+({dst_desc})
 
-destination port :
-{dst_port}
+dst port :
+{dst_port} 
+
+Query :
+{query}
+
+URL/DNS :
+{url}
 
 ===============================
 

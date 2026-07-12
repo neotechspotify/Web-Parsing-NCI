@@ -4,35 +4,37 @@ Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilak
 
 ===============================
 
-Sec. Event : {event_name}<br>
-Category : {severity}<br>
-Magnitude : {sev_magnitude}<br>
-Waktu Deteksi : {tanggal} {waktu}<br>
+Sec. Event : {event_type}
+Signature : {event_name}
+Severity : {magnitude}
+Action : {action}
+Waktu Deteksi : {tanggal}, {waktu}
 
 ===============================
 
-Deskripsi Event :<br>
-Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada<br>
+Deskripsi Event :
+Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada
 
-src ip :<br>
-{src_ip}	 
+source ip :
+{src_ip}
 
-src Country :<br>
-{src_country} 
+source country :
+{src_country}
 
-dst ip :<br>
+dst ip : 
 {dst_ip}
+({dst_desc})
 
-dst port :<br>
-{dst_port} 
+dst port :
+{dst_port}
 
-dst Country :<br>
+dst country :
 {dst_country}
 
-Query :<br>
+Query :
 {query}
 
-URL/DNS :<br>
+URL/DNS :
 {url}
 
 ===============================
@@ -41,10 +43,10 @@ URL/DNS :<br>
 
 ===============================
 
-Mitigasi :<br>
+Mitigasi :
 {mitigasi}
 
 ===============================
 
-Terimakasih,<br>
+Terimakasih,
 SOC AAL

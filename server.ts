@@ -428,38 +428,115 @@ function applyHeuristicCorrections(eventData: any, rawLine: string, instansi: st
       const cleanQuote = (q: string) => {
         if (!q) return "";
         let val = q.replace(/^"|"$/g, '').trim();
-        // replace literal \n or actual newlines with real newlines
         val = val.replace(/\\n/g, '\n');
         return val;
       };
 
-      corrected.event_id = parts[0] || corrected.event_id;
-      corrected.analyst = parts[1] || corrected.analyst;
-      corrected.ticket_id = parts[2] || corrected.ticket_id;
-      corrected.alert_group = parts[2];
-      corrected.event_type = parts[3] || "Misc Attack"; // Sec. Event
-      
-      const matchedTemplateFile = findTemplateInRawText(instansi, rawLine);
-      if (matchedTemplateFile) {
-        corrected.event_name = path.basename(matchedTemplateFile, '.txt');
+      const suricataIdx = parts.indexOf('Suricata-Events');
+      if (suricataIdx !== -1 && parts.length > suricataIdx + 13) {
+        corrected.event_id = parts[0] || corrected.event_id;
+        corrected.analyst = parts[1] || corrected.analyst;
+        corrected.ticket_id = parts[2] || corrected.ticket_id;
+        corrected.alert_group = parts[4] || corrected.alert_group;
+        
+        // Skip Suricata-Events and map the actual security event (e.g. "Misc Attack")
+        corrected.event_type = parts[suricataIdx + 1] || "Misc Attack";
+        
+        const matchedTemplateFile = findTemplateInRawText(instansi, rawLine);
+        if (matchedTemplateFile) {
+          corrected.event_name = path.basename(matchedTemplateFile, '.txt');
+        } else {
+          corrected.event_name = parts[suricataIdx + 2] || corrected.event_name;
+        }
+        
+        corrected.magnitude = parts[suricataIdx + 3] || corrected.magnitude;
+        corrected.tanggal = parts[suricataIdx + 4] || corrected.tanggal;
+        corrected.waktu = parts[suricataIdx + 5] || corrected.waktu;
+        corrected.action = parts[suricataIdx + 7] || corrected.action;
+        corrected.event_status = parts[suricataIdx + 8] || corrected.event_status;
+        corrected.traffic_flow = parts[suricataIdx + 9] || corrected.traffic_flow;
+        
+        if (corrected.event_status && (corrected.event_status.toLowerCase() === 'close' || corrected.event_status.toLowerCase() === 'closed')) {
+          corrected.action = 'Closed';
+        }
+        
+        corrected.src_ip = cleanQuote(parts[suricataIdx + 10]) || corrected.src_ip;
+        corrected.src_country = cleanQuote(parts[suricataIdx + 11]) || corrected.src_country;
+        corrected.dst_ip = cleanQuote(parts[suricataIdx + 12]) || corrected.dst_ip;
+        corrected.dst_port = cleanQuote(parts[suricataIdx + 13]) || corrected.dst_port;
+        
+        if (parts.length > suricataIdx + 14) {
+          corrected.dst_country = cleanQuote(parts[suricataIdx + 14]) || corrected.dst_country;
+          corrected.dst_desc = corrected.dst_country;
+        }
       } else {
-        corrected.event_name = parts[4] || corrected.event_name;
-      }
-      
-      corrected.magnitude = parts[5] || corrected.magnitude; // Severity
-      corrected.tanggal = parts[6] || corrected.tanggal;
-      corrected.waktu = parts[7] || corrected.waktu;
-      corrected.action = parts[8] || corrected.action;
-      corrected.event_status = parts[9] || corrected.event_status;
-      corrected.traffic_flow = parts[10] || corrected.traffic_flow;
-      
-      if (parts.length > 11) corrected.src_ip = cleanQuote(parts[11]) || corrected.src_ip;
-      if (parts.length > 12) corrected.src_country = cleanQuote(parts[12]) || corrected.src_country;
-      if (parts.length > 13) corrected.dst_ip = cleanQuote(parts[13]) || corrected.dst_ip;
-      if (parts.length > 14) corrected.dst_port = cleanQuote(parts[14]) || corrected.dst_port;
-      if (parts.length > 15) {
-        corrected.dst_country = cleanQuote(parts[15]) || corrected.dst_country;
-        corrected.dst_desc = corrected.dst_country;
+        if (parts.length >= 18) {
+          corrected.event_id = parts[0] || corrected.event_id;
+          corrected.analyst = parts[1] || corrected.analyst;
+          corrected.ticket_id = parts[2] || corrected.ticket_id;
+          corrected.alert_group = parts[4] || corrected.alert_group;
+          corrected.event_type = parts[5] || corrected.event_type || "Misc Attack";
+          
+          const matchedTemplateFile = findTemplateInRawText(instansi, rawLine);
+          if (matchedTemplateFile) {
+            corrected.event_name = path.basename(matchedTemplateFile, '.txt');
+          } else {
+            corrected.event_name = parts[6] || corrected.event_name;
+          }
+          
+          corrected.magnitude = parts[7] || corrected.magnitude;
+          corrected.tanggal = parts[8] || corrected.tanggal;
+          corrected.waktu = parts[9] || corrected.waktu;
+          corrected.action = parts[11] || corrected.action;
+          corrected.event_status = parts[12] || corrected.event_status;
+          corrected.traffic_flow = parts[13] || corrected.traffic_flow;
+          
+          if (corrected.event_status && (corrected.event_status.toLowerCase() === 'close' || corrected.event_status.toLowerCase() === 'closed')) {
+            corrected.action = 'Closed';
+          }
+          
+          corrected.src_ip = cleanQuote(parts[14]) || corrected.src_ip;
+          corrected.src_country = cleanQuote(parts[15]) || corrected.src_country;
+          corrected.dst_ip = cleanQuote(parts[16]) || corrected.dst_ip;
+          corrected.dst_port = cleanQuote(parts[17]) || corrected.dst_port;
+          if (parts.length > 18) {
+            corrected.dst_country = cleanQuote(parts[18]) || corrected.dst_country;
+            corrected.dst_desc = corrected.dst_country;
+          }
+        } else {
+          corrected.event_id = parts[0] || corrected.event_id;
+          corrected.analyst = parts[1] || corrected.analyst;
+          corrected.ticket_id = parts[2] || corrected.ticket_id;
+          corrected.alert_group = parts[2];
+          corrected.event_type = parts[3] || "Misc Attack";
+          
+          const matchedTemplateFile = findTemplateInRawText(instansi, rawLine);
+          if (matchedTemplateFile) {
+            corrected.event_name = path.basename(matchedTemplateFile, '.txt');
+          } else {
+            corrected.event_name = parts[4] || corrected.event_name;
+          }
+          
+          corrected.magnitude = parts[5] || corrected.magnitude;
+          corrected.tanggal = parts[6] || corrected.tanggal;
+          corrected.waktu = parts[7] || corrected.waktu;
+          corrected.action = parts[8] || corrected.action;
+          corrected.event_status = parts[9] || corrected.event_status;
+          corrected.traffic_flow = parts[10] || corrected.traffic_flow;
+          
+          if (corrected.event_status && (corrected.event_status.toLowerCase() === 'close' || corrected.event_status.toLowerCase() === 'closed')) {
+            corrected.action = 'Closed';
+          }
+          
+          if (parts.length > 11) corrected.src_ip = cleanQuote(parts[11]) || corrected.src_ip;
+          if (parts.length > 12) corrected.src_country = cleanQuote(parts[12]) || corrected.src_country;
+          if (parts.length > 13) corrected.dst_ip = cleanQuote(parts[13]) || corrected.dst_ip;
+          if (parts.length > 14) corrected.dst_port = cleanQuote(parts[14]) || corrected.dst_port;
+          if (parts.length > 15) {
+            corrected.dst_country = cleanQuote(parts[15]) || corrected.dst_country;
+            corrected.dst_desc = corrected.dst_country;
+          }
+        }
       }
       
       return corrected;
@@ -535,6 +612,30 @@ function applyHeuristicCorrections(eventData: any, rawLine: string, instansi: st
     if (rawLine.toLowerCase().includes(' ' + sev + ' ') || rawLine.toLowerCase().includes('\t' + sev + '\t')) {
       corrected.magnitude = sev.charAt(0).toUpperCase() + sev.slice(1);
       break;
+    }
+  }
+
+  // 6. Extract URL/DNS & Query heuristically
+  const isLikelyDomainOrUrl = (str: string): boolean => {
+    if (!str) return false;
+    const clean = str.trim();
+    if (clean.includes(' ') || clean.includes('\t')) return false;
+    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(clean)) return false;
+    if (clean.toLowerCase().startsWith('http://') || clean.toLowerCase().startsWith('https://')) return true;
+    return /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,12}(\/.*)?$/.test(clean);
+  };
+
+  const lineParts = rawLine.split(/[\s\t]+/).map(p => p.trim());
+  if (!corrected.url || corrected.url === '-' || corrected.url === '') {
+    const foundDomain = lineParts.find(p => isLikelyDomainOrUrl(p));
+    if (foundDomain) {
+      corrected.url = foundDomain;
+    }
+  }
+  if (!corrected.query || corrected.query === '-' || corrected.query === '') {
+    const foundDomain = lineParts.find(p => isLikelyDomainOrUrl(p));
+    if (foundDomain) {
+      corrected.query = foundDomain;
     }
   }
 
