@@ -539,6 +539,78 @@ function applyHeuristicCorrections(eventData: any, rawLine: string, instansi: st
         }
       }
       
+      // 6. Intelligent Domain/URL & Query heuristics (run inside AAL block too!)
+      const isLikelyDomainOrUrl = (str: string): boolean => {
+        if (!str) return false;
+        const clean = str.trim();
+        if (clean.includes(' ') || clean.includes('\t')) return false;
+        if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(clean)) return false;
+        if (clean.toLowerCase().startsWith('http://') || clean.toLowerCase().startsWith('https://')) return true;
+        return /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,12}(\/.*)?$/.test(clean);
+      };
+
+      const lineParts = rawLine.split(/[\s\t]+/).map(p => p.trim());
+      let foundDomain = lineParts.find(p => isLikelyDomainOrUrl(p));
+
+      if (!foundDomain && rawLine.includes('\t')) {
+        const tsvParts = rawLine.split('\t').map(p => p.trim());
+        foundDomain = tsvParts.find(p => isLikelyDomainOrUrl(p));
+      }
+
+      // If a field got a domain due to column shifting, prioritize that!
+      const shiftKeys = ['src_country', 'dst_port', 'dst_country'];
+      for (const key of shiftKeys) {
+        if (corrected[key] && isLikelyDomainOrUrl(corrected[key])) {
+          foundDomain = corrected[key].trim();
+          corrected[key] = '-'; // reset the shifted field
+          if (key === 'dst_country') {
+            corrected.dst_desc = '-';
+          }
+        }
+      }
+
+      if (foundDomain) {
+        if (!corrected.url || corrected.url === '-' || corrected.url === '') {
+          corrected.url = foundDomain;
+        }
+        if (!corrected.query || corrected.query === '-' || corrected.query === '') {
+          corrected.query = foundDomain;
+        }
+      }
+
+      // Correct IP Port split issues (e.g. "8.8.8.8 53")
+      const ipPortPattern = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+(\d+)$/;
+      const foundIpPortPart = lineParts.find(p => ipPortPattern.test(p));
+      if (foundIpPortPart) {
+        const match = foundIpPortPart.match(ipPortPattern);
+        if (match) {
+          corrected.dst_ip = match[1];
+          corrected.dst_port = match[2];
+        }
+      } else {
+        for (const key of ['src_country', 'dst_ip', 'dst_port', 'dst_country']) {
+          if (corrected[key] && ipPortPattern.test(corrected[key].trim())) {
+            const match = corrected[key].trim().match(ipPortPattern);
+            if (match) {
+              corrected.dst_ip = match[1];
+              corrected.dst_port = match[2];
+              if (key !== 'dst_ip' && key !== 'dst_port') {
+                corrected[key] = '-';
+              }
+            }
+          }
+        }
+      }
+
+      // If dst_ip is country-like due to shift, move it to country
+      if (corrected.dst_ip && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(corrected.dst_ip)) {
+        if (corrected.dst_ip === 'United States' || corrected.dst_ip === 'ID' || corrected.dst_ip === 'Indonesia') {
+          corrected.dst_country = corrected.dst_ip;
+          corrected.dst_desc = corrected.dst_ip;
+          corrected.dst_ip = '-';
+        }
+      }
+
       return corrected;
     }
   }
