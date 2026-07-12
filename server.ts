@@ -565,36 +565,63 @@ function applyHeuristicCorrections(eventData: any, rawLine: string, instansi: st
       return /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,12}(\/.*)?$/.test(clean);
     };
 
-    const lineParts = rawLine.split(/[\s\t]+/).map(p => p.trim());
-    let foundDomain = lineParts.find(p => isLikelyDomainOrUrl(p));
+    const getDomainsFromParts = (): string[] => {
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const part = parts[i];
+        if (!part) continue;
+        if (/^\d+$/.test(part.trim())) continue;
+        if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(part.trim())) continue;
+        
+        const cleaned = part.replace(/^"|"$/g, '').trim();
+        const subLines = cleaned.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+        
+        const candidateDomains: string[] = [];
+        for (const line of subLines) {
+          const words = line.split(/[\s\t]+/).map(w => w.replace(/^"|"$/g, '').trim());
+          for (const w of words) {
+            if (isLikelyDomainOrUrl(w)) {
+              candidateDomains.push(w);
+            }
+          }
+        }
+        
+        if (candidateDomains.length > 0) {
+          return candidateDomains;
+        }
+      }
+      return [];
+    };
 
-    if (!foundDomain && rawLine.includes('\t')) {
-      const tsvParts = rawLine.split('\t').map(p => p.trim());
-      foundDomain = tsvParts.find(p => isLikelyDomainOrUrl(p));
-    }
+    const foundDomains = getDomainsFromParts();
 
     // If a field got a domain due to column shifting, prioritize that!
     const shiftKeys = ['src_country', 'dst_port', 'dst_country'];
     for (const key of shiftKeys) {
-      if (corrected[key] && isLikelyDomainOrUrl(corrected[key])) {
-        foundDomain = corrected[key].trim();
-        corrected[key] = '-'; // reset the shifted field
-        if (key === 'dst_country') {
-          corrected.dst_desc = '-';
+      if (corrected[key]) {
+        const cleaned = corrected[key].replace(/^"|"$/g, '').trim();
+        const subLines = cleaned.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+        const shiftDomains = subLines.filter(l => isLikelyDomainOrUrl(l));
+        if (shiftDomains.length > 0) {
+          corrected[key] = '-'; // reset the shifted field
+          if (key === 'dst_country') {
+            corrected.dst_desc = '-';
+          }
         }
       }
     }
 
-    if (foundDomain) {
+    if (foundDomains.length > 0) {
+      const verticalDomains = verticalize(foundDomains.join('\n'));
       if (!corrected.url || corrected.url === '-' || corrected.url === '') {
-        corrected.url = foundDomain;
+        corrected.url = verticalDomains;
       }
       if (!corrected.query || corrected.query === '-' || corrected.query === '') {
-        corrected.query = foundDomain;
+        corrected.query = verticalDomains;
       }
     }
 
     // Correct IP Port split issues (e.g. "8.8.8.8 53")
+    const lineParts = rawLine.split(/[\s\t]+/).map(p => p.trim());
     const ipPortPattern = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+(\d+)$/;
     const foundIpPortPart = lineParts.find(p => ipPortPattern.test(p));
     if (foundIpPortPart) {
@@ -712,17 +739,42 @@ function applyHeuristicCorrections(eventData: any, rawLine: string, instansi: st
     return /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,12}(\/.*)?$/.test(clean);
   };
 
-  const lineParts = rawLine.split(/[\s\t]+/).map(p => p.trim());
-  if (!corrected.url || corrected.url === '-' || corrected.url === '') {
-    const foundDomain = lineParts.find(p => isLikelyDomainOrUrl(p));
-    if (foundDomain) {
-      corrected.url = foundDomain;
+  const getDomainsFromLine = (): string[] => {
+    const parts = rawLine.split('\t').map(p => p.trim());
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const part = parts[i];
+      if (!part) continue;
+      if (/^\d+$/.test(part.trim())) continue;
+      if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(part.trim())) continue;
+      
+      const cleaned = part.replace(/^"|"$/g, '').trim();
+      const subLines = cleaned.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+      
+      const candidateDomains: string[] = [];
+      for (const line of subLines) {
+        const words = line.split(/[\s\t]+/).map(w => w.replace(/^"|"$/g, '').trim());
+        for (const w of words) {
+          if (isLikelyDomainOrUrl(w)) {
+            candidateDomains.push(w);
+          }
+        }
+      }
+      
+      if (candidateDomains.length > 0) {
+        return candidateDomains;
+      }
     }
-  }
-  if (!corrected.query || corrected.query === '-' || corrected.query === '') {
-    const foundDomain = lineParts.find(p => isLikelyDomainOrUrl(p));
-    if (foundDomain) {
-      corrected.query = foundDomain;
+    return [];
+  };
+
+  const foundDomains = getDomainsFromLine();
+  if (foundDomains.length > 0) {
+    const verticalDomains = verticalize(foundDomains.join('\n'));
+    if (!corrected.url || corrected.url === '-' || corrected.url === '') {
+      corrected.url = verticalDomains;
+    }
+    if (!corrected.query || corrected.query === '-' || corrected.query === '') {
+      corrected.query = verticalDomains;
     }
   }
 
