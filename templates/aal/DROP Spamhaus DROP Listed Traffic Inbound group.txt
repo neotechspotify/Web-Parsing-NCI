@@ -17,17 +17,17 @@ Waktu Deteksi : {tanggal}, {waktu}
 Deskripsi Event :
 Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada
 
-source ip :
+Source IP :
 {src_ip}
 
-source country :
+Source Country :
 {src_country}
 
-dst ip : 
+Destination IP : 
 {dst_ip}
 ({dst_desc})
 
-dst port :
+Destination Port :
 {dst_port}
 
 ===============================
