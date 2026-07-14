@@ -1267,8 +1267,23 @@ function formatSeverityList(eventsList: SophosEvent[]): string {
   if (eventsList.length === 0) {
     return "1. = (0)";
   }
-  return eventsList
-    .map((e, idx) => `${idx + 1}. ${e.eventName} (${e.total} ${e.total > 1 ? 'events' : 'event'})`)
+  
+  const order: string[] = [];
+  const grouped: Record<string, number> = {};
+  
+  for (const e of eventsList) {
+    if (grouped[e.eventName] === undefined) {
+      order.push(e.eventName);
+      grouped[e.eventName] = 0;
+    }
+    grouped[e.eventName] += e.total;
+  }
+  
+  return order
+    .map((eventName, idx) => {
+      const total = grouped[eventName];
+      return `${idx + 1}. ${eventName} (${total} ${total > 1 ? 'events' : 'event'})`;
+    })
     .join('\n');
 }
 
