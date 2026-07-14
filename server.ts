@@ -1170,10 +1170,10 @@ function parseSophosDetailedLog(text: string): Record<string, string> {
     else if (k === 'incidentid' || k === 'incidentno' || k === 'ticketid' || k === 'idinsiden' || k === 'idticket' || k === 'noinsiden') data['incident_id'] = val;
   }
 
-  if (commandLineParent) {
-    data['command_line'] = commandLineParent;
-  } else if (commandLineStd) {
+  if (commandLineStd) {
     data['command_line'] = commandLineStd;
+  } else if (commandLineParent) {
+    data['command_line'] = commandLineParent;
   }
 
   // Post-process default fields if specific event is matched
@@ -1360,12 +1360,23 @@ function fillTemplate(templateContent: string, eventData: any, magMap?: Record<s
   };
 
   const mergedData = { ...commonFallbacks, ...eventData };
+  const isHtmlTemplate = templateContent.includes('<table') || templateContent.includes('</table>') || templateContent.includes('<div') || templateContent.includes('<p');
 
   for (const [key, val] of Object.entries(mergedData)) {
     let stringVal = val === null || val === undefined ? "-" : String(val);
-    // Strip trailing <br> tags to prevent trailing empty lines, then convert remaining <br> to newlines
-    stringVal = stringVal.replace(/<br\s*\/?>\s*$/gi, '');
-    stringVal = stringVal.replace(/<br\s*\/?>\n?/gi, '\n');
+    
+    if (isHtmlTemplate) {
+      // For HTML templates, we want to convert any literal \n to <br /> if it doesn't already have <br> tags.
+      // This ensures that lists and descriptions look exactly as spaced in Outlook and our preview.
+      if (!/<br\s*\/?>/i.test(stringVal)) {
+        stringVal = stringVal.replace(/\r?\n/g, '<br />');
+      }
+    } else {
+      // Strip trailing <br> tags to prevent trailing empty lines, then convert remaining <br> to newlines
+      stringVal = stringVal.replace(/<br\s*\/?>\s*$/gi, '');
+      stringVal = stringVal.replace(/<br\s*\/?>\n?/gi, '\n');
+    }
+    
     filled = filled.replace(new RegExp(`{${key}}`, 'g'), stringVal);
   }
   

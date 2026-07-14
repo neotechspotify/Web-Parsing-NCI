@@ -741,7 +741,8 @@ function ManualTab({
     try {
       if (content.includes('<table') || content.includes('</table>')) {
         // Build formatted rich-text HTML block to preserve typography and table formatting on paste
-        const richHtml = `<div style="white-space: pre-wrap; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #1e293b;">${content}</div>`;
+        // We MUST NOT use white-space: pre-wrap on HTML templates, as this causes Outlook to render raw HTML code newlines as massive visual empty vertical spacing!
+        const richHtml = `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #1e293b;">${content}</div>`;
         const blobHtml = new Blob([richHtml], { type: 'text/html' });
         const blobText = new Blob([content], { type: 'text/plain' });
         const item = new ClipboardItem({
@@ -1277,7 +1278,11 @@ function ManualTab({
                     </div>
                   </div>
 
-                  <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-900">
+                  <div className={`p-2.5 rounded-lg border ${
+                    fileObj.content && (fileObj.content.includes('<table') || fileObj.content.includes('</table>'))
+                      ? 'bg-slate-900 border-slate-800'
+                      : 'bg-slate-950 border-slate-900'
+                  }`}>
                     {fileObj.content && (fileObj.content.includes('<table') || fileObj.content.includes('</table>')) ? (
                       <div className="flex flex-col gap-2">
                         <div className="flex justify-end gap-1 border-b border-slate-800 pb-1.5 mb-1.5">
@@ -1287,7 +1292,7 @@ function ManualTab({
                             className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase transition-all ${
                               (previewModes[index] || 'rendered') === 'rendered'
                                 ? 'bg-indigo-600 text-white'
-                                : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                                : 'bg-slate-950 text-slate-400 hover:text-slate-200'
                             }`}
                           >
                             Rendered
@@ -1298,7 +1303,7 @@ function ManualTab({
                             className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase transition-all ${
                               (previewModes[index] || 'rendered') === 'raw'
                                 ? 'bg-indigo-600 text-white'
-                                : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                                : 'bg-slate-950 text-slate-400 hover:text-slate-200'
                             }`}
                           >
                             Raw Code
@@ -1306,11 +1311,11 @@ function ManualTab({
                         </div>
                         {(previewModes[index] || 'rendered') === 'rendered' ? (
                           <div 
-                            className="text-[10px] text-slate-300 max-h-[250px] overflow-y-auto select-text bg-slate-950 p-1 whitespace-pre-wrap"
+                            className="text-[11px] text-slate-800 max-h-[350px] overflow-y-auto select-text bg-white p-4 rounded-md border border-slate-200"
                             dangerouslySetInnerHTML={{ __html: fileObj.content }}
                           />
                         ) : (
-                          <pre className="text-[10px] font-mono text-slate-400 max-h-[250px] overflow-y-auto whitespace-pre-wrap select-all">
+                          <pre className="text-[10px] font-mono text-slate-400 max-h-[250px] overflow-y-auto whitespace-pre-wrap select-all bg-slate-950 p-2 rounded border border-slate-800">
                             {fileObj.content}
                           </pre>
                         )}
@@ -1785,7 +1790,7 @@ function TemplatesTab({
               ) : (
                 templatePreviewMode === 'rendered' && (activeTemplate.content.includes('<table') || activeTemplate.content.includes('</table>')) ? (
                   <div 
-                    className="text-xs text-slate-300 p-2 select-text whitespace-pre-wrap"
+                    className="text-xs text-slate-800 bg-white p-4 rounded border border-slate-200 select-text max-h-[400px] overflow-y-auto"
                     dangerouslySetInnerHTML={{ __html: activeTemplate.content }}
                   />
                 ) : (
