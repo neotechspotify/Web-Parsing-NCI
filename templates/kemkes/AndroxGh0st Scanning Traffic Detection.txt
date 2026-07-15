@@ -7,6 +7,7 @@ Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilak
 Sec. Event : {event_name}<br>
 Category : {severity}<br>
 Action : Closed<br>
+Log Source : PA-KEMKES<br>
 Magnitude : {sev_magnitude}<br>
 Waktu Deteksi : {tanggal} {waktu}<br>
 
