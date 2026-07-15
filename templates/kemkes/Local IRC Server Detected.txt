@@ -7,6 +7,8 @@ Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilak
 Sec. Event : {event_name}<br>
 Category : {severity}<br>
 Magnitude : {sev_magnitude}<br>
+Action : Closed<br>
+Log Source : Custom Rule Engine-8 :: soc<br>
 Waktu Deteksi : {tanggal} {waktu}<br>
 
 ===============================
@@ -14,19 +16,19 @@ Waktu Deteksi : {tanggal} {waktu}<br>
 Deskripsi Event :<br>
 Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada
 
-src ip :<br>
+Source IP :<br>
 {src_ip}	 
 
-src Country :<br>
+Source Country :<br>
 {src_country} 
 
-dst ip : <br>
+Destination IP : <br>
 {dst_ip} 
 
-dst port :<br>
+Destination Port :<br>
 {dst_port} 
 
-dst Country :<br>
+Destination Country :<br>
 {dst_country} 
 
 Query :<br>
@@ -37,18 +39,23 @@ URL/DNS :<br>
 
 ===============================
 
-Pada Alert ini menunjukkan bahwa ada host lokal yang menjalankan layanan pada port IRC (Internet Relay Chat) yang umum digunakan atau terdapat lalu lintas jaringan (network flow) yang terdeteksi sebagai komunikasi IRC.<br>
+Event ini terjadi karena sistem keamanan mendeteksi adanya layanan IRC yang aktif pada host internal. Pada lingkungan enterprise, penggunaan IRC umumnya tidak termasuk layanan yang digunakan untuk operasional bisnis sehingga aktivitas ini tergolong tidak lazim dan perlu dilakukan verifikasi.
 
-Mohon untuk ditindak lanjuti terkait IP tersebut.<br>
-Action External : Event ini sudah di eskalasi ke Layer 2 dan Layer 3
+Selain digunakan sebagai media komunikasi, protokol IRC juga sering dimanfaatkan oleh malware dan botnet sebagai Command and Control (C2) untuk menerima perintah dari server pengendali, melakukan komunikasi dengan host lain, maupun menjalankan aktivitas berbahaya pada endpoint yang telah terkompromi.
+
+Berdasarkan informasi yang tersedia, alert ini belum dapat memastikan bahwa host telah terkompromi. Oleh karena itu, diperlukan pemeriksaan lebih lanjut untuk memastikan apakah layanan IRC tersebut merupakan aplikasi yang sah atau merupakan indikasi aktivitas berbahaya.
 
 ===============================
 
 Mitigasi :<br>
-- Tutup port IRC (6667, 6697, 7000, dll.) di firewall untuk mencegah komunikasi yang tidak sah.
-- Terapkan deep packet inspection (DPI) untuk mendeteksi dan memblokir lalu lintas IRC.
-
+- Identifikasi host internal yang menjalankan layanan IRC beserta aplikasi atau proses yang menggunakan port tersebut.
+- Verifikasi kepada pemilik aset apakah penggunaan layanan IRC merupakan kebutuhan operasional yang sah.
+- Periksa proses yang berjalan, layanan aktif, scheduled task, serta aplikasi yang baru terpasang pada endpoint untuk mengidentifikasi kemungkinan malware atau backdoor.
+- Lakukan pemindaian menggunakan antivirus atau EDR guna memastikan tidak terdapat malware atau botnet pada endpoint.
+- Tinjau koneksi jaringan untuk mengidentifikasi komunikasi menuju server IRC eksternal atau aktivitas Command and Control (C2).
+- Apabila layanan IRC tidak memiliki kebutuhan bisnis, nonaktifkan layanan tersebut dan blokir komunikasi IRC melalui firewall atau IPS sesuai kebijakan keamanan organisasi.
+- Lakukan monitoring terhadap host terkait untuk mendeteksi aktivitas serupa maupun indikasi kompromi lanjutan.
 ===============================
 
 Terimakasih,<br>
-SOC Kemenkes
+SOC Neotech
