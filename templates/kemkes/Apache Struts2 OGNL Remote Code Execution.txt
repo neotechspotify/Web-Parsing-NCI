@@ -12,7 +12,7 @@ Waktu Deteksi : {tanggal} {waktu}<br>
 ===============================
 
 Deskripsi Event :<br>
-Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada<br>
+Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada
 
 src ip :<br>
 {src_ip}	 
@@ -21,14 +21,13 @@ src Country :<br>
 {src_country} 
 
 dst ip :<br>
-{dst_ip} 
+{dst_ip}
 
 dst port :<br>
 {dst_port} 
 
 dst Country :<br>
 {dst_country}
-
 Query :<br>
 {query}
 
@@ -37,14 +36,15 @@ URL/DNS :<br>
 
 ===============================
 
-event Ini Ada upaya untuk menggunakan AndroxGh0st yang merupakan malware Python berbahaya yang menargetkan terutama berkas .env Laravel.
+event Ini mengindikasikan kemungkinan serangan terhadap kerentanan bypass otentikasi pada produk SAP BusinessObjects. Siapa pun yang dapat mengakses produk yang rentan tersebut dapat menggunakan nama pengguna dan kata sandi bawaan (default) untuk masuk dan mengunggah kode произвольно, yang menyebabkan eksekusi kode произвольно (arbitrary code execution).
 
 ===============================
 
 Mitigasi :<br>
-- Sistem Deteksi Intrusi/Pencegahan Intrusi
-- Konfigurasi Web Server
-- lakukan hardening
+- Batasi Hak Akses Pengguna
+- Update dan Patch 
+- Terapkan WAF.
+- isolasi sistem yang terpengaruh
 
 ===============================
 

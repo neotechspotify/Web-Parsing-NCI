@@ -526,7 +526,12 @@ function applyHeuristicCorrections(eventData: any, rawLine: string, instansi: st
     }
 
     // Time
-    const timeFields = parts.filter(p => /\b\d{1,2}[:\.]\d{2}([:\.]\d{2})?\b/.test(p));
+    const timeFields = parts.filter(p => {
+      const cleanP = p.trim();
+      if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanP)) return true;
+      if (/^\d{2}\.\d{2}(\.\d{2})?$/.test(cleanP)) return true;
+      return false;
+    });
     if (timeFields.length > 0) {
       corrected.waktu = timeFields[0];
     } else if (suricataIdx !== -1 && parts.length > suricataIdx + 5) {
@@ -708,13 +713,33 @@ function applyHeuristicCorrections(eventData: any, rawLine: string, instansi: st
   const dateRegex = /\b\d{2}[\/\-\.]\d{2}[\/\-\.]\d{4}\b/g;
   const dates = rawLine.match(dateRegex) || [];
   if (dates.length > 0) {
-    corrected.tanggal = dates[0];
+    if (!corrected.tanggal || corrected.tanggal === '-') {
+      corrected.tanggal = dates[0];
+    }
   }
 
-  const timeRegex = /\b\d{2}[:\.]\d{2}([:\.]\d{2})?\b/g;
-  const times = rawLine.match(timeRegex) || [];
-  if (times.length > 0) {
-    corrected.waktu = times[0];
+  const isValidTime = (val: string) => {
+    if (!val || val === '-') return false;
+    const cleanVal = val.trim();
+    return /^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanVal) || /^\d{2}\.\d{2}(\.\d{2})?$/.test(cleanVal);
+  };
+
+  if (!isValidTime(corrected.waktu)) {
+    // Try to extract a colon-based time (1 or 2 digits)
+    const colonTimeRegex = /\b\d{1,2}:\d{2}(:\d{2})?\b/g;
+    const colonMatches = rawLine.match(colonTimeRegex) || [];
+    if (colonMatches.length > 0) {
+      corrected.waktu = colonMatches[0];
+    } else {
+      // Try to extract dot-based time but exclude IP addresses
+      const dotTimeRegex = /\b\d{2}\.\d{2}(\.\d{2})?\b/g;
+      const ipRegex = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g;
+      const lineWithoutIps = rawLine.replace(ipRegex, '[IP]');
+      const dotMatches = lineWithoutIps.match(/\b\d{2}\.\d{2}(\.\d{2})?\b/g) || [];
+      if (dotMatches.length > 0) {
+        corrected.waktu = dotMatches[0];
+      }
+    }
   }
 
   // 4. Extract action

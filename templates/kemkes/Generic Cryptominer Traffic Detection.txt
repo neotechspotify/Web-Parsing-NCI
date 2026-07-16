@@ -7,7 +7,6 @@ Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilak
 Sec. Event : {event_name}<br>
 Category : {severity}<br>
 Magnitude : {sev_magnitude}<br>
-Action : Closed<br>
 Waktu Deteksi : {tanggal} {waktu}<br>
 
 ===============================
@@ -15,19 +14,19 @@ Waktu Deteksi : {tanggal} {waktu}<br>
 Deskripsi Event :<br>
 Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada<br>
 
-Source IP :<br>
+src ip :<br>
 {src_ip}	 
 
-Source Country :<br>
+src Country :<br>
 {src_country} 
 
-Destination IP :<br>
+dst ip :<br>
 {dst_ip}
 
-Destination Port :<br>
+dst port :<br>
 {dst_port} 
 
-Destination Country :<br>
+dst Country :<br>
 {dst_country}
 
 Query :<br>
@@ -50,4 +49,4 @@ Mitigasi :<br>
 ===============================
 
 Terimakasih,<br>
-SOC Neotech
+SOC Kemenkes
