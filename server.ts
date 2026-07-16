@@ -2433,12 +2433,18 @@ SOC Neotech`;
           if (sev === "0") {
             return false;
           }
-          if (att.startsWith("192.168.")) {
+          if (
+            att.startsWith("192.168.") ||
+            att.startsWith("172.31.") ||
+            att.startsWith("10.100.") ||
+            att.startsWith("10.255.") ||
+            att === "0.0.0.0"
+          ) {
             return false;
           }
           return true;
         });
-        processLog.push(`🧹 [KEMKES] Menyaring data: Menghapus baris dengan Severity = 0 atau Attacker = 192.168.* (Sisa ${rows.length} dari ${initialCount} baris).`);
+        processLog.push(`🧹 [KEMKES] Menyaring data: Menghapus baris dengan Severity = 0 atau Attacker di 192.168.*, 172.31.*, 10.100.*, 10.255.*, 0.0.0.0 (Sisa ${rows.length} dari ${initialCount} baris).`);
       }
 
       const baseNameNoExt = file ? path.basename(file.path, '.xml') : 'pasted_xml';
