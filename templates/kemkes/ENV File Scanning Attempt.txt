@@ -7,6 +7,8 @@ Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilak
 Sec. Event : {event_name}<br>
 Category : {severity}<br>
 Magnitude : {sev_magnitude}<br>
+Action : Closed <br>
+Log Source : PA-KEMKES<br>
 Waktu Deteksi : {tanggal} {waktu}<br>
 
 ===============================
@@ -14,19 +16,19 @@ Waktu Deteksi : {tanggal} {waktu}<br>
 Deskripsi Event :<br>
 Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada
 
-src ip :<br>
+Source IP :<br>
 {src_ip}	 
 
-src Country :<br>
+Source Country :<br>
 {src_country} 
 
-dst ip : <br>
+Destination IP : <br>
 {dst_ip} 
 
-dst port :<br>
+Destination Port :<br>
 {dst_port} 
 
-dst Country :<br>
+Destination Country :<br>
 {dst_country}
 
 Query :<br>
@@ -37,20 +39,23 @@ URL/DNS :<br>
 
 ===============================
 
-Pada Alert ini menunjukkan bahwa ada upaya untuk mengakses atau memindai file .env pada sebuah server atau aplikasi web. Di mana penyerang mencoba mencari kelemahan dengan memindai file konfigurasi yang mengandung informasi sensitif. <br>
+Event ini terjadi karena perangkat keamanan Palo Alto mendeteksi adanya permintaan HTTP yang mengarah ke file .env, yaitu file konfigurasi yang umum digunakan oleh berbagai aplikasi web, termasuk Laravel. File tersebut sering kali menyimpan informasi sensitif seperti kredensial database, API key, secret key aplikasi, serta konfigurasi layanan lainnya.
 
-Mohon untuk ditindak lanjuti terkait IP tersebut.<br>
-Action External : Event ini sudah di eskalasi ke Layer 2 dan Layer 3
+Aktivitas seperti ini umumnya merupakan bagian dari proses reconnaissance (pemindaian) yang dilakukan penyerang untuk mengidentifikasi server yang salah konfigurasi dan mengekspos file .env ke publik. Apabila file tersebut dapat diakses, informasi sensitif yang terkandung di dalamnya dapat dimanfaatkan untuk memperoleh akses tidak sah ke aplikasi atau infrastruktur terkait.
+
+Berdasarkan log yang tersedia, alert ini hanya menunjukkan adanya percobaan akses (scanning) terhadap file .env dan belum terdapat bukti bahwa file tersebut berhasil diakses atau terjadi kebocoran informasi. Diperlukan pemeriksaan lebih lanjut terhadap log web server untuk memastikan respons yang diberikan kepada permintaan tersebut.
 
 ===============================
 
 Mitigasi :<br>
-- Pastikan aktivitas scanning bukan dilakukan secara sengaja oleh user internal tanpa izin.
-- Blokir akses ke file .env di server
-- Lakukan blocking IP yang terindikasi sebagai bad reputation.
-- OS Hardening
+- Tinjau access log dan error log web server pada {dst_ip} untuk mengidentifikasi request menuju file .env dari alamat IP {src_ip}.
+- Pastikan file .env tidak dapat diakses melalui HTTP dan berada di luar document root atau dibatasi melalui konfigurasi web server.
+- Verifikasi respons HTTP terhadap request tersebut. Apabila ditemukan respons HTTP 200 OK, segera lakukan rotasi seluruh kredensial yang tersimpan di dalam file .env, termasuk kredensial database, API key, SMTP, serta secret aplikasi.
+- Pastikan aplikasi web dan framework yang digunakan telah diperbarui ke versi yang masih didukung dan tidak memiliki konfigurasi yang memungkinkan file sensitif diakses dari internet.
+- Pertimbangkan untuk memblokir alamat IP {src_ip} pada firewall, IPS, atau External Dynamic List (EDL) apabila aktivitas serupa terus berulang dan dipastikan bukan merupakan akses yang sah.
+- Lakukan monitoring terhadap aktivitas scanning serupa maupun indikasi eksploitasi lanjutan pada web server.
 
 ===============================
 
 Terimakasih,<br>
-SOC Kemenkes
+SOC Neotech
