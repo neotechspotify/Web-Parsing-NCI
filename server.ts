@@ -1816,6 +1816,227 @@ app.post('/api/templates/create', (req, res) => {
   }
 });
 
+// --- BLACKLISTS API VARIABLES, HELPERS & ENDPOINTS ---
+const BLACKLIST_FILENAMES = [
+  "List-IP-Blacklist.txt",
+  "List-IP-Whitelist.txt",
+  "List-Domain-Blacklist.txt",
+  "List-Domain-Ads-Blacklist.txt",
+  "List-Domain-Whitelist-General.txt",
+  "List-Domain-Whitelist-Wifi.txt",
+  "List-URL-Filtering.txt",
+  "List-URL-Whitelist-General.txt",
+  "List-URL-Whitelist-Wifi.txt",
+  "AutomationBlacklistSOC.txt",
+  "WebHook-Test.txt"
+];
+
+const DEFAULT_BLACKLIST_CONTENTS: Record<string, string> = {
+  "List-IP-Blacklist.txt": `# List-IP-Blacklist.txt - Malicious IPs detected by SOC\n45.205.1.222\n216.25.89.86\n66.132.224.94\n193.163.125.74\n45.205.1.223\n66.132.195.154\n193.163.125.254\n80.87.206.20\n160.119.76.64\n193.46.0.6\n77.90.185.10\n45.135.194.31\n137.184.190.194\n138.68.153.47\n170.64.177.80\n185.220.101.4\n91.196.152.101\n141.98.83.48\n205.210.31.237\n80.94.95.217\n`,
+  "List-IP-Whitelist.txt": `# List-IP-Whitelist.txt - Trusted internal and public IPs\n172.16.1.41\n172.16.1.91\n172.16.1.95\n10.100.10.1\n10.255.0.254\n192.168.1.1\n8.8.8.8\n1.1.1.1\n127.0.0.1\n`,
+  "List-Domain-Blacklist.txt": `# List-Domain-Blacklist.txt - Malicious and C2 domains\nmalicious-update-service.com\nc2-panel-login.net\nphishing-portal-neotech.xyz\ncryptominer-pool-connection.org\nransomware-payload-delivery.com\nsilversandbox.net\nbadreputation-domain.info\n`,
+  "List-Domain-Ads-Blacklist.txt": `# List-Domain-Ads-Blacklist.txt - Ad servers and tracking domains\ndoubleclick.net\ntelemetry-tracking-analytics.com\nadserver-popup-delivery.xyz\npromo-offer-tracker.info\n`,
+  "List-Domain-Whitelist-General.txt": `# List-Domain-Whitelist-General.txt - Allowed general domains\nkemkes.go.id\nkemtan.go.id\nmedika.id\ngoogle.com\nmicrosoft.com\ngithub.com\ncloudflare.com\n`,
+  "List-Domain-Whitelist-Wifi.txt": `# List-Domain-Whitelist-Wifi.txt - Allowed domains on public Wi-Fi\nspotify.com\nyoutube.com\ninstagram.com\ntwitter.com\nfacebook.com\n`,
+  "List-URL-Filtering.txt": `# List-URL-Filtering.txt - Blocked URL patterns and endpoints\n/public/phpinfo.php\n/admin/config.php\n/wp-admin/install.php\n/shell.php\n/api/v1/auth/debug\n/config/db_test.php\n/.env\n`,
+  "List-URL-Whitelist-General.txt": `# List-URL-Whitelist-General.txt - Allowed general URL paths\n/api/v1/public/health\n/index.html\n/assets/*\n/login\n`,
+  "List-URL-Whitelist-Wifi.txt": `# List-URL-Whitelist-Wifi.txt - Allowed URL paths on guest Wi-Fi\n/guest/login\n/assets/banner.png\n`,
+  "AutomationBlacklistSOC.txt": `# AutomationBlacklistSOC.txt - Dynamically added blocks\n198.51.100.55\n203.0.113.88\n`,
+  "WebHook-Test.txt": `# WebHook-Test.txt - Configuration for alert integrations\nURL: https://discord.com/api/webhooks/mock-webhook-id-123\nTYPE: DISCORD\nSTATUS: ACTIVE\n`
+};
+
+function checkBlacklistedIPsAndDomains(instansi: string, events: any[]): string[] {
+  const warnings: string[] = [];
+  const baseDb = path.join(getDatabaseDir(), instansi);
+  const ipBlacklistFile = path.join(baseDb, 'blacklists', 'List-IP-Blacklist.txt');
+  const domainBlacklistFile = path.join(baseDb, 'blacklists', 'List-Domain-Blacklist.txt');
+
+  let blacklistedIPs = new Set<string>();
+  if (fs.existsSync(ipBlacklistFile)) {
+    const lines = fs.readFileSync(ipBlacklistFile, 'utf-8').split('\n');
+    for (const line of lines) {
+      const clean = line.split('#')[0].trim();
+      if (clean) blacklistedIPs.add(clean);
+    }
+  }
+
+  let blacklistedDomains = new Set<string>();
+  if (fs.existsSync(domainBlacklistFile)) {
+    const lines = fs.readFileSync(domainBlacklistFile, 'utf-8').split('\n');
+    for (const line of lines) {
+      const clean = line.split('#')[0].trim();
+      if (clean) blacklistedDomains.add(clean.toLowerCase());
+    }
+  }
+
+  const flaggedIPs = new Set<string>();
+  const flaggedDomains = new Set<string>();
+
+  for (const event of events) {
+    if (event.src_ip) {
+      const ips = event.src_ip.split('\n');
+      for (const ip of ips) {
+        const cleanIp = ip.trim();
+        if (blacklistedIPs.has(cleanIp)) {
+          flaggedIPs.add(cleanIp);
+        }
+      }
+    }
+    if (event.dst_ip) {
+      const ips = event.dst_ip.split('\n');
+      for (const ip of ips) {
+        const cleanIp = ip.trim();
+        if (blacklistedIPs.has(cleanIp)) {
+          flaggedIPs.add(cleanIp);
+        }
+      }
+    }
+    if (event.event_name) {
+      const text = event.event_name.toLowerCase();
+      for (const dom of blacklistedDomains) {
+        if (text.includes(dom)) {
+          flaggedDomains.add(dom);
+        }
+      }
+    }
+  }
+
+  if (flaggedIPs.size > 0) {
+    warnings.push(`⚠️ Blacklist Warning: Detect Malicious IPs in log: ${Array.from(flaggedIPs).join(', ')}`);
+  }
+  if (flaggedDomains.size > 0) {
+    warnings.push(`⚠️ Blacklist Warning: Detect Malicious Domains in log: ${Array.from(flaggedDomains).join(', ')}`);
+  }
+
+  return warnings;
+}
+
+app.get('/api/blacklists/:instansi', (req, res) => {
+  const { instansi } = req.params;
+  const baseDb = path.join(getDatabaseDir(), instansi);
+  const blacklistDir = path.join(baseDb, 'blacklists');
+  const isMedika = instansi.toLowerCase() === 'medika';
+  const filenames = isMedika ? ["List-IP-Blacklist.txt"] : BLACKLIST_FILENAMES;
+
+  try {
+    if (!fs.existsSync(blacklistDir)) {
+      fs.mkdirSync(blacklistDir, { recursive: true });
+    }
+
+    // Initialize missing files with default content
+    for (const filename of filenames) {
+      const filePath = path.join(blacklistDir, filename);
+      if (!fs.existsSync(filePath)) {
+        const defaultContent = DEFAULT_BLACKLIST_CONTENTS[filename] || `# ${filename}\n`;
+        fs.writeFileSync(filePath, defaultContent, 'utf-8');
+      }
+    }
+
+    // For medika, delete other blacklist files if they exist to keep disk clean
+    if (isMedika) {
+      for (const filename of BLACKLIST_FILENAMES) {
+        if (filename !== "List-IP-Blacklist.txt") {
+          const filePath = path.join(blacklistDir, filename);
+          if (fs.existsSync(filePath)) {
+            try {
+              fs.unlinkSync(filePath);
+            } catch (e) {
+              // Ignore unlink errors
+            }
+          }
+        }
+      }
+    }
+
+    // Read files and return their metadata
+    const files = filenames.map(filename => {
+      const filePath = path.join(blacklistDir, filename);
+      const stat = fs.statSync(filePath);
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const lines = content.split('\n').filter(line => line.trim().length > 0 && !line.startsWith('#'));
+      return {
+        name: filename,
+        size: stat.size,
+        lines: lines.length,
+        totalLines: content.split('\n').length,
+        updatedAt: stat.mtime
+      };
+    });
+
+    res.json({ success: true, files });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/blacklists/:instansi/:filename', (req, res) => {
+  const { instansi, filename } = req.params;
+  const baseDb = path.join(getDatabaseDir(), instansi);
+  const filePath = path.join(baseDb, 'blacklists', filename);
+  const isMedika = instansi.toLowerCase() === 'medika';
+
+  try {
+    if (isMedika && filename !== 'List-IP-Blacklist.txt') {
+      return res.status(403).json({ success: false, error: 'Access denied to this file for MEDIKA' });
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, error: 'File not found' });
+    }
+
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const stat = fs.statSync(filePath);
+    res.json({
+      success: true,
+      name: filename,
+      content,
+      size: stat.size,
+      updatedAt: stat.mtime,
+      totalLines: content.split('\n').length
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/blacklists/:instansi/:filename', (req, res) => {
+  const { instansi, filename } = req.params;
+  const { content } = req.body;
+  const baseDb = path.join(getDatabaseDir(), instansi);
+  const filePath = path.join(baseDb, 'blacklists', filename);
+  const isMedika = instansi.toLowerCase() === 'medika';
+
+  try {
+    if (isMedika && filename !== 'List-IP-Blacklist.txt') {
+      return res.status(403).json({ success: false, error: 'Access denied to this file for MEDIKA' });
+    }
+
+    if (typeof content !== 'string') {
+      return res.status(400).json({ success: false, error: 'Content is required and must be a string' });
+    }
+
+    // Ensure directory exists
+    const blacklistDir = path.dirname(filePath);
+    if (!fs.existsSync(blacklistDir)) {
+      fs.mkdirSync(blacklistDir, { recursive: true });
+    }
+
+    fs.writeFileSync(filePath, content, 'utf-8');
+    const stat = fs.statSync(filePath);
+
+    res.json({
+      success: true,
+      message: 'File updated successfully',
+      name: filename,
+      size: stat.size,
+      updatedAt: stat.mtime,
+      totalLines: content.split('\n').length
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Create manual event preview and filler
 app.post('/api/buat_event', (req, res) => {
   const { instansi, shift, use_raw, raw_text, analyst, ...fields } = req.body;
@@ -2516,6 +2737,12 @@ SOC Neotech`;
           return applyHeuristicCorrections(e, lineText, instansi);
         });
         processLog.push(`✅ Parsing ${events.length} event selesai.`);
+
+        // Check for blacklisted IPs and domains and push warnings
+        const blacklistWarnings = checkBlacklistedIPsAndDomains(instansi, events);
+        for (const warning of blacklistWarnings) {
+          processLog.push(warning);
+        }
 
         const shiftOutdir = cleanShiftFolder(outputDir, shift);
         const processedEventNames = new Set<string>();

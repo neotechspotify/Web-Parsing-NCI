@@ -29,6 +29,7 @@ import {
 import companyLogo from './assets/images/nci_shield_white_bg_1783343904191.jpg';
 import { LogEvent, ProcessResult } from './types';
 import AalPivotVisualizer from './components/AalPivotVisualizer';
+import RepositoryTab from './components/RepositoryTab';
 
 export const downloadSingleFile = (fileObj: { name: string; content?: string; base64?: string; type?: string }) => {
   let blob: Blob;
@@ -55,7 +56,7 @@ export const downloadSingleFile = (fileObj: { name: string; content?: string; ba
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'processor' | 'manual' | 'templates' | 'docs'>('processor');
+  const [activeTab, setActiveTab] = useState<'processor' | 'manual' | 'templates' | 'docs' | 'repository'>('processor');
   const [instansiList, setInstansiList] = useState<string[]>(['kemkes', 'sophos', 'aal', 'medika']);
   const [templates, setTemplates] = useState<Record<string, string[]>>({});
   const [loadingTemplates, setLoadingTemplates] = useState(false);
@@ -107,7 +108,7 @@ export default function App() {
 
         {/* Tab Buttons */}
         <nav className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 self-start sm:self-center">
-          {(['processor', 'manual', 'templates', 'docs'] as const).map((tab) => (
+          {(['processor', 'manual', 'templates', 'repository', 'docs'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -120,6 +121,7 @@ export default function App() {
               {tab === 'processor' && <Upload className="h-3.5 w-3.5" />}
               {tab === 'manual' && <Edit3 className="h-3.5 w-3.5" />}
               {tab === 'templates' && <FileText className="h-3.5 w-3.5" />}
+              {tab === 'repository' && <Database className="h-3.5 w-3.5" />}
               {tab === 'docs' && <HelpCircle className="h-3.5 w-3.5" />}
               {tab}
             </button>
@@ -151,6 +153,12 @@ export default function App() {
               loading={loadingTemplates}
               fetchTemplates={fetchTemplates}
               setActiveTab={setActiveTab}
+              instansiList={instansiList}
+            />
+          )}
+
+          {activeTab === 'repository' && (
+            <RepositoryTab
               instansiList={instansiList}
             />
           )}
