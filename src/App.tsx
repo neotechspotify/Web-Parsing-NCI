@@ -56,7 +56,7 @@ export const downloadSingleFile = (fileObj: { name: string; content?: string; ba
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'processor' | 'manual' | 'templates' | 'docs'>('processor');
-  const [instansiList, setInstansiList] = useState<string[]>(['kemkes', 'sophos', 'aal']);
+  const [instansiList, setInstansiList] = useState<string[]>(['kemkes', 'sophos', 'aal', 'medika']);
   const [templates, setTemplates] = useState<Record<string, string[]>>({});
   const [loadingTemplates, setLoadingTemplates] = useState(false);
 
@@ -151,6 +151,7 @@ export default function App() {
               loading={loadingTemplates}
               fetchTemplates={fetchTemplates}
               setActiveTab={setActiveTab}
+              instansiList={instansiList}
             />
           )}
 
@@ -563,6 +564,55 @@ function ProcessorTab({ instansiList, onProcessComplete }: { instansiList: strin
                                 <>
                                   <Copy className="h-3 w-3 text-indigo-400" />
                                   Copy Report
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Individual Ticket Files Section */}
+            {result.resultFiles.filter((f) => f.type === 'text').length > 0 && (
+              <div className="flex flex-col gap-4">
+                <h3 className="text-xs font-semibold uppercase text-slate-400 tracking-wider">Generated Individual Event Tickets</h3>
+                <div className="bg-slate-900/40 border border-slate-800/80 rounded-xl p-4 max-h-[360px] overflow-y-auto flex flex-col gap-2">
+                  {result.resultFiles
+                    .filter((fileObj) => fileObj.type === 'text')
+                    .map((fileObj, index) => (
+                      <div
+                        key={fileObj.name}
+                        className="flex items-center justify-between p-3 bg-slate-950 border border-slate-850 rounded-lg hover:border-slate-800 transition-colors gap-4"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <FileText className="h-4 w-4 text-indigo-400 shrink-0" />
+                          <span className="text-xs font-medium text-slate-300 truncate font-mono">{fileObj.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => downloadSingleFile(fileObj)}
+                            className="py-1 px-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[10px] font-semibold text-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Download className="h-3 w-3 text-indigo-400" />
+                            Download
+                          </button>
+                          {fileObj.content && (
+                            <button
+                              onClick={() => copyToClipboard(fileObj.content!, index + 1000)}
+                              className="py-1 px-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[10px] font-semibold text-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
+                            >
+                              {copiedIndex === index + 1000 ? (
+                                <>
+                                  <Check className="h-3 w-3 text-emerald-400" />
+                                  Copied!
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="h-3 w-3 text-indigo-400" />
+                                  Copy
                                 </>
                               )}
                             </button>
@@ -1371,11 +1421,13 @@ function TemplatesTab({
   loading,
   fetchTemplates,
   setActiveTab,
+  instansiList,
 }: {
   templates: Record<string, string[]>;
   loading: boolean;
   fetchTemplates: () => void;
   setActiveTab: (tab: 'processor' | 'manual' | 'templates' | 'docs') => void;
+  instansiList: string[];
 }) {
   const [selectedInstansi, setSelectedInstansi] = useState('kemkes');
   const [searchQuery, setSearchQuery] = useState('');
@@ -1508,7 +1560,7 @@ function TemplatesTab({
           </div>
           {/* Instansi Switcher */}
           <div className="flex bg-slate-950 p-1 rounded-md border border-slate-800">
-            {['kemkes', 'sophos', 'aal'].map((ins) => (
+            {instansiList.map((ins) => (
               <button
                 key={ins}
                 onClick={() => {
@@ -1580,9 +1632,11 @@ function TemplatesTab({
                 onChange={(e) => setNewInstansi(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-xs text-slate-300 focus:outline-none"
               >
-                <option value="kemkes">KEMKES</option>
-                <option value="sophos">SOPHOS</option>
-                <option value="aal">AAL</option>
+                {instansiList.map((ins) => (
+                  <option key={ins} value={ins}>
+                    {ins.toUpperCase()}
+                  </option>
+                ))}
               </select>
 
               <input

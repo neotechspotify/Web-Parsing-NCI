@@ -668,6 +668,130 @@ function applyHeuristicCorrections(eventData: any, rawLine: string, instansi: st
     return corrected;
   }
 
+  if (instansi.toLowerCase() === 'medika') {
+    const parts = rawLine.split('\t').map(p => {
+      let clean = p.trim();
+      if (clean.startsWith('"') && clean.endsWith('"')) {
+        clean = clean.substring(1, clean.length - 1).trim();
+      }
+      return clean;
+    });
+
+    // Find the index of the traffic flow column dynamically to determine column mapping
+    const flowIdx = parts.findIndex(p => {
+      const l = p.toLowerCase();
+      return l.includes('to private') || 
+             l.includes('to public') || 
+             l.includes('internal to') || 
+             l.includes('external to') || 
+             l === 'internal' || 
+             l === 'external' || 
+             l === 'public to private' || 
+             l === 'private to public';
+    });
+
+    if (flowIdx !== -1) {
+      corrected.traffic_flow = parts[flowIdx];
+      corrected.src_ip = verticalize(parts[flowIdx + 1]);
+      corrected.src_country = verticalize(parts[flowIdx + 2]);
+      corrected.dst_ip = verticalize(parts[flowIdx + 3]);
+      corrected.dst_port = verticalize(parts[flowIdx + 4]);
+      
+      if (parts[flowIdx + 5]) {
+        const nextField = parts[flowIdx + 5].toLowerCase();
+        // Check if next field is a destination country or something else
+        if (!nextField.includes('mozilla') && !nextField.includes('chrome') && !nextField.includes('safari') && nextField !== 'internal' && nextField !== 'external') {
+          corrected.dst_country = parts[flowIdx + 5];
+          corrected.dst_desc = parts[flowIdx + 5];
+        } else {
+          corrected.dst_country = '-';
+          corrected.dst_desc = '-';
+        }
+      } else {
+        corrected.dst_country = '-';
+        corrected.dst_desc = '-';
+      }
+    } else {
+      // Fallback to standard indices if flowIdx is not found
+      corrected.src_ip = verticalize(parts[20]);
+      corrected.src_country = verticalize(parts[21]);
+      corrected.dst_ip = verticalize(parts[22]);
+      corrected.dst_port = verticalize(parts[23]);
+      corrected.dst_country = parts[24] || '-';
+      corrected.dst_desc = parts[24] || '-';
+    }
+
+    // Force "Misc Attack" and "Allowed" for Suricata/CINS/Spamhaus/Dshield events
+    const isSuricata = (corrected.event_type && corrected.event_type.toLowerCase() === 'suricata') || 
+                       rawLine.toLowerCase().includes('suricata') || 
+                       rawLine.toLowerCase().includes('et cins') || 
+                       rawLine.toLowerCase().includes('et drop') || 
+                       rawLine.toLowerCase().includes('spamhaus') || 
+                       rawLine.toLowerCase().includes('dshield');
+
+    const isImapsBrute = rawLine.toLowerCase().includes('rapid imaps') || rawLine.toLowerCase().includes('brute force attack');
+    const isPhpInfo = rawLine.toLowerCase().includes('phpinfo') || rawLine.toLowerCase().includes('web-php');
+    const isNmap = (rawLine.toLowerCase().includes('nmap') || rawLine.toLowerCase().includes('et scan')) && !isImapsBrute && !isPhpInfo;
+
+    if (isImapsBrute) {
+      corrected.event_type = 'Misc Activity';
+      corrected.action = 'Allow';
+    } else if (isPhpInfo) {
+      corrected.event_type = 'Information Leak';
+      corrected.action = 'Allowed';
+
+      // Robustly determine app_access or payload
+      let extractedPayload = '';
+
+      // 1. Regex direct match from rawLine
+      const directMatch = rawLine.match(/\b(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)\s+(\/[^\t\s\r\n]+)/i);
+      if (directMatch) {
+        extractedPayload = `${directMatch[1]} ${directMatch[2]}`;
+      } else {
+        // 2. Check if there are method + path in flowIdx + 6/7
+        if (flowIdx !== -1 && parts[flowIdx + 6]) {
+          const p6 = parts[flowIdx + 6].trim();
+          const p7 = parts[flowIdx + 7] ? parts[flowIdx + 7].trim() : '';
+          if (/^(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)$/i.test(p6) && p7.startsWith('/')) {
+            extractedPayload = `${p6} ${p7}`;
+          } else if (p6.startsWith('/')) {
+            extractedPayload = `GET ${p6}`;
+          } else {
+            extractedPayload = p6;
+          }
+        } else if (parts[25]) {
+          extractedPayload = parts[25];
+        } else {
+          const payloadMatch = rawLine.match(/\b(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)\s+\S+\s+HTTP\/\d\.\d/i) || 
+                               rawLine.match(/\b(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)\s+\S+/i);
+          if (payloadMatch) {
+            extractedPayload = payloadMatch[0];
+          }
+        }
+      }
+
+      if (!extractedPayload || extractedPayload === '-') {
+        extractedPayload = 'GET /public/phpinfo.php';
+      }
+
+      console.log(`[DEBUG PHPINFO] rawLine: "${rawLine}"`);
+      console.log(`[DEBUG PHPINFO] extractedPayload: "${extractedPayload}"`);
+
+      corrected.app_access = extractedPayload;
+      corrected.payload = extractedPayload;
+    } else if (isNmap) {
+      corrected.event_type = 'Attempted Information Leak';
+      corrected.action = 'Allowed';
+    } else if (isSuricata) {
+      corrected.event_type = 'Misc Attack';
+      corrected.action = 'Allowed';
+    }
+
+    if (corrected.app_access && !corrected.payload) {
+      corrected.payload = corrected.app_access;
+    }
+  }
+
   // 1. Find correct event_name by matching against existing template files in the directory
   const matchedTemplateFile = findTemplateInRawText(instansi, rawLine);
   if (matchedTemplateFile) {
@@ -690,65 +814,170 @@ function applyHeuristicCorrections(eventData: any, rawLine: string, instansi: st
     }
   }
 
-  // 2. Extract quoted strings (which contain grouped IPs, countries, ports)
-  const quotes = rawLine.match(/"([^"]*)"/g);
-  if (quotes && quotes.length >= 4) {
-    const cleanQuote = (q: string) => q.replace(/^"|"$/g, '').trim().replace(/\s+/g, '\n');
-    corrected.src_ip = cleanQuote(quotes[0]);
-    corrected.src_country = cleanQuote(quotes[1]);
-    corrected.dst_ip = cleanQuote(quotes[2]);
-    corrected.dst_port = cleanQuote(quotes[3]);
-  } else {
-    const ipRegex = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g;
-    const ips = rawLine.match(ipRegex) || [];
-    if (ips.length > 0 && (!corrected.src_ip || corrected.src_ip === '-')) {
-      corrected.src_ip = ips[0];
-      if (ips.length > 1) {
-        corrected.dst_ip = ips.slice(1).join('\n');
+  // 2. Extract quoted strings (which contain grouped IPs, countries, ports) semantically (skip for medika as it is fully and dynamically parsed above)
+  if (instansi.toLowerCase() !== 'medika') {
+    const quotes = rawLine.match(/"([^"]*)"/g);
+    if (quotes) {
+      const cleanQuotes = quotes.map(q => q.replace(/^"|"$/g, '').trim());
+      
+      // Find IP lists inside quotes
+      const ipRegex = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/;
+      const ipQuotes = cleanQuotes.filter(q => ipRegex.test(q));
+      
+      if (ipQuotes.length >= 2) {
+        corrected.src_ip = ipQuotes[0].replace(/\s+/g, '\n');
+        corrected.dst_ip = ipQuotes[1].replace(/\s+/g, '\n');
+      } else if (ipQuotes.length === 1) {
+        // If only one IP list is found in quotes, assign to source IP and extract destination IPs from raw Line outside of quotes
+        corrected.src_ip = ipQuotes[0].replace(/\s+/g, '\n');
+        const ipMatches = rawLine.match(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g) || [];
+        const nonQuotedIps = ipMatches.filter(ip => !ipQuotes[0].includes(ip));
+        if (nonQuotedIps.length > 0) {
+          corrected.dst_ip = nonQuotedIps.join('\n');
+        }
+      } else {
+        // No IP quotes, fall back to extracting all IPs via regex
+        const ipRegexAll = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g;
+        const ips = rawLine.match(ipRegexAll) || [];
+        if (ips.length > 0) {
+          corrected.src_ip = ips[0];
+          if (ips.length > 1) {
+            corrected.dst_ip = ips.slice(1).join('\n');
+          }
+        }
       }
+
+      // Find Country/Location lists inside quotes (exclude statuses and flows)
+      const countryQuotes = cleanQuotes.filter(q => {
+        const cleanQ = q.trim().toLowerCase();
+        if (ipRegex.test(cleanQ)) return false;
+        if (/^\d+(\s+\d+)*$/.test(cleanQ)) return false;
+        if (cleanQ.includes('progress') || cleanQ.includes('close') || cleanQ.includes('open')) return false;
+        if (cleanQ.includes('private') || cleanQ.includes('public')) return false;
+        return cleanQ.length > 0;
+      });
+
+      if (countryQuotes.length >= 2) {
+        corrected.src_country = countryQuotes[0].replace(/\s+/g, '\n');
+        corrected.dst_country = countryQuotes[1].replace(/\s+/g, '\n');
+      } else if (countryQuotes.length === 1) {
+        corrected.src_country = countryQuotes[0].replace(/\s+/g, '\n');
+      }
+
+      // Find Port lists inside quotes
+      const portQuotes = cleanQuotes.filter(q => {
+        const cleanQ = q.trim();
+        return /^\d+(\s+\d+)*$/.test(cleanQ) && !ipRegex.test(cleanQ);
+      });
+      if (portQuotes.length > 0) {
+        corrected.dst_port = portQuotes[0].replace(/\s+/g, '\n');
+      }
+    } else {
+      // If no quotes at all, fallback to regex for IPs
+      const ipRegexAll = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g;
+      const ips = rawLine.match(ipRegexAll) || [];
+      if (ips.length > 0 && (!corrected.src_ip || corrected.src_ip === '-' || corrected.src_ip.toLowerCase().includes('progress'))) {
+        corrected.src_ip = ips[0];
+        if (ips.length > 1) {
+          corrected.dst_ip = ips.slice(1).join('\n');
+        }
+      }
+    }
+
+    // Post-validation cleanup: Ensure fields don't leak status or flow labels
+    const invalidIpOrCountry = (val: string) => {
+      if (!val) return false;
+      const l = val.toLowerCase();
+      return l.includes('progress') || l.includes('private') || l.includes('public') || l.includes('close') || l.includes('open');
+    };
+
+    if (corrected.src_ip && invalidIpOrCountry(corrected.src_ip)) {
+      corrected.src_ip = '-';
+    }
+    if (corrected.src_country && invalidIpOrCountry(corrected.src_country)) {
+      corrected.src_country = '-';
+    }
+    if (corrected.dst_ip && invalidIpOrCountry(corrected.dst_ip)) {
+      corrected.dst_ip = '-';
+    }
+    if (corrected.dst_port && invalidIpOrCountry(corrected.dst_port)) {
+      corrected.dst_port = '-';
+    }
+    if (corrected.dst_country && invalidIpOrCountry(corrected.dst_country)) {
+      corrected.dst_country = '-';
     }
   }
 
   // 3. Extract correct date and time
-  const dateRegex = /\b\d{2}[\/\-\.]\d{2}[\/\-\.]\d{4}\b/g;
-  const dates = rawLine.match(dateRegex) || [];
-  if (dates.length > 0) {
-    if (!corrected.tanggal || corrected.tanggal === '-') {
+  const datePattern = /^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/;
+  const isValidDate = (val: string) => {
+    if (!val) return false;
+    return datePattern.test(val.trim());
+  };
+
+  if (!isValidDate(corrected.tanggal)) {
+    const dateRegex = /\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}\b/g;
+    const dates = rawLine.match(dateRegex) || [];
+    if (dates.length > 0) {
       corrected.tanggal = dates[0];
+    } else {
+      corrected.tanggal = '-';
     }
   }
 
-  const isValidTime = (val: string) => {
-    if (!val || val === '-') return false;
+  const timePattern = /^\d{1,2}:\d{2}(:\d{2})?$/;
+  const isValidTimeFormat = (val: string) => {
+    if (!val) return false;
     const cleanVal = val.trim();
-    return /^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanVal) || /^\d{2}\.\d{2}(\.\d{2})?$/.test(cleanVal);
+    return timePattern.test(cleanVal) || /^\d{2}\.\d{2}(\.\d{2})?$/.test(cleanVal);
   };
 
-  if (!isValidTime(corrected.waktu)) {
-    // Try to extract a colon-based time (1 or 2 digits)
-    const colonTimeRegex = /\b\d{1,2}:\d{2}(:\d{2})?\b/g;
-    const colonMatches = rawLine.match(colonTimeRegex) || [];
-    if (colonMatches.length > 0) {
-      corrected.waktu = colonMatches[0];
+  if (!isValidTimeFormat(corrected.waktu)) {
+    const timeMatches = rawLine.match(/\b\d{1,2}:\d{2}(:\d{2})?\b/g) || [];
+    if (timeMatches.length > 0) {
+      corrected.waktu = timeMatches[0];
     } else {
-      // Try to extract dot-based time but exclude IP addresses
       const dotTimeRegex = /\b\d{2}\.\d{2}(\.\d{2})?\b/g;
       const ipRegex = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g;
       const lineWithoutIps = rawLine.replace(ipRegex, '[IP]');
       const dotMatches = lineWithoutIps.match(/\b\d{2}\.\d{2}(\.\d{2})?\b/g) || [];
       if (dotMatches.length > 0) {
         corrected.waktu = dotMatches[0];
+      } else {
+        corrected.waktu = '-';
       }
     }
   }
 
   // 4. Extract action
-  if (rawLine.toLowerCase().includes('block ip on edl')) {
-    corrected.action = 'Block IP on EDL';
-  } else if (rawLine.toLowerCase().includes('block')) {
-    corrected.action = 'Block';
-  } else if (rawLine.toLowerCase().includes('allowed') || rawLine.toLowerCase().includes('allow')) {
-    corrected.action = 'Allowed';
+  const cleanActionStr = (corrected.action || '').trim().toLowerCase();
+  const isValidAction = cleanActionStr && (
+    cleanActionStr.includes('allow') || 
+    cleanActionStr.includes('block') || 
+    cleanActionStr.includes('close') || 
+    cleanActionStr.includes('closed')
+  );
+
+  if (!isValidAction) {
+    if (rawLine.toLowerCase().includes('block ip on edl')) {
+      corrected.action = 'Block IP on EDL';
+    } else if (rawLine.toLowerCase().includes('block domain on edl')) {
+      corrected.action = 'Block Domain on EDL';
+    } else if (rawLine.toLowerCase().includes('block')) {
+      corrected.action = 'Block';
+    } else if (rawLine.toLowerCase().includes('allowed') || rawLine.toLowerCase().includes('allow')) {
+      corrected.action = 'Allowed';
+    }
+  } else {
+    if (cleanActionStr.includes('block ip on edl')) {
+      corrected.action = 'Block IP on EDL';
+    } else if (cleanActionStr.includes('block domain on edl')) {
+      corrected.action = 'Block Domain on EDL';
+    } else if (cleanActionStr === 'allow' || cleanActionStr === 'allowed') {
+      corrected.action = 'Allow';
+    } else if (cleanActionStr === 'block') {
+      corrected.action = 'Block';
+    }
   }
 
   // 5. Severity/Magnitude
@@ -1396,7 +1625,8 @@ function fillTemplate(templateContent: string, eventData: any, magMap?: Record<s
     file_path: "/bin/sh",
     command_line: '["/bin/sh","-c","sync; echo 3 > /proc/sys/vm/drop_caches"]',
     ioc_value: "4f291296e89b784cd35479fca606f228126e3641f5bcaee68dee36583d7c9483",
-    action: "Melakukan verifikasi terhadap file target untuk memastikan file merupakan bagian dari aktivitas aplikasi legitimate dan bukan payload malicious."
+    action: "Melakukan verifikasi terhadap file target untuk memastikan file merupakan bagian dari aktivitas aplikasi legitimate dan bukan payload malicious.",
+    payload: eventData.payload || eventData.app_access || eventData.query || eventData.url || "-"
   };
 
   const mergedData = { ...commonFallbacks, ...eventData };
@@ -2280,7 +2510,11 @@ SOC Neotech`;
           processLog.push(`💬 WA Report successfully created: ${waFileName}`);
         }
       } else {
-        const events = file ? parseTxtFile(file.path) : parseTxtContent(paste_text || '');
+        const rawEvents = file ? parseTxtFile(file.path) : parseTxtContent(paste_text || '');
+        const events = rawEvents.map(e => {
+          const lineText = e._rawLine || '';
+          return applyHeuristicCorrections(e, lineText, instansi);
+        });
         processLog.push(`✅ Parsing ${events.length} event selesai.`);
 
         const shiftOutdir = cleanShiftFolder(outputDir, shift);
@@ -2320,7 +2554,8 @@ SOC Neotech`;
               name: outFileName,
               path: outFilePath,
               downloadUrl: `/api/download?path=${encodeURIComponent(outFilePath)}`,
-              type: 'text'
+              type: 'text',
+              content: filled
             });
 
             processedEventNames.add(uniqueKey);
