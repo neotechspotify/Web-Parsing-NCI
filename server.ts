@@ -2519,7 +2519,10 @@ SOC Neotech`;
 
         const shiftOutdir = cleanShiftFolder(outputDir, shift);
         const processedEventNames = new Set<string>();
-        const validTypes = ["Log Activity", "Offensess", "Offenses"];
+        const isMedika = instansi.toLowerCase() === 'medika';
+        const validTypes = isMedika
+          ? ["log activity", "offensess", "offenses", "suricata", "misc attack", "attempted information leak", "information leak", "misc activity"]
+          : ["log activity", "offensess", "offenses"];
 
         const offenses = events.filter(e => {
           const type = (e.event_type || '').trim().toLowerCase();
@@ -2594,6 +2597,16 @@ SOC Neotech`;
             logsCount[name] = (logsCount[name] || 0) + 1;
           }
 
+          const alertsCount: Record<string, number> = {};
+          if (isMedika) {
+            for (const e of events) {
+              const name = (e.event_name || "").trim().replace(/^"|"$/g, '');
+              const ticketId = (e.ticket_id || "").trim();
+              if (!name || !ticketId) continue;
+              alertsCount[name] = (alertsCount[name] || 0) + 1;
+            }
+          }
+
           let offensesStr = Object.entries(offensesCount)
             .map(([name, count], i) => `${i + 1}. ${name} (${count} ${count > 1 ? 'events' : 'event'})`)
             .join("\n");
@@ -2604,12 +2617,21 @@ SOC Neotech`;
             .join("\n");
           if (!logsStr) logsStr = "Tidak ada event terdeteksi";
 
+          let alertsStr = "";
+          if (isMedika) {
+            alertsStr = Object.entries(alertsCount)
+              .map(([name, count], i) => `${i + 1}. ${name} (${count} ${count > 1 ? 'events' : 'event'})`)
+              .join("\n");
+            if (!alertsStr) alertsStr = "Tidak ada event terdeteksi";
+          }
+
           let waText = template
             .replace(/{salam}/g, greeting)
             .replace(/{tanggal}/g, tanggal)
             .replace(/{jam}/g, jam)
             .replace(/{offenses}/g, offensesStr)
-            .replace(/{log_activity}/g, logsStr);
+            .replace(/{log_activity}/g, logsStr)
+            .replace(/{alerts}/g, alertsStr);
 
           const waFileName = `wa_${instansi.toLowerCase()}_shift${shift}.txt`;
           const waFilePath = path.join(shiftOutdir, waFileName);

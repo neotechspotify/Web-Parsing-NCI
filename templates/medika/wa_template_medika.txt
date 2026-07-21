@@ -1,13 +1,11 @@
+[SUMMARY]
+
 {salam} Rekan - Rekan,
 
-Berikut kami lampirkan hasil dari monitoring pada tanggal {tanggal} {jam}, dimana pada platform mendeteksi adanya event sebagai berikut :
+Berikut kami lampirkan hasil dari monitoring pada tanggal {tanggal} {jam}, dimana pada SIEM mendeteksi adanya event sebagai berikut :
 
-A. Offenses :
-{offenses}
+A. Alert :
+{alerts}
 
-B. Log Activity :
-{log_activity}
-
-
-Terimakasih,
+Terimakasih, 
 SOC Neotech
