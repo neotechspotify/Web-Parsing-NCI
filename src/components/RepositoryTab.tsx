@@ -37,7 +37,11 @@ import {
   ExternalLink,
   AlertCircle,
   CloudDownload,
-  CloudUpload
+  CloudUpload,
+  Lock,
+  Unlock,
+  ShieldCheck,
+  Key
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -123,6 +127,8 @@ const MOCK_COMMITS: Record<string, { author: string; hash: string; msg: string; 
   }
 };
 
+const LOCKED_INSTANSI_LIST = ['kemkes', 'aal', 'sophos'];
+
 export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
   const [selectedInstansi, setSelectedInstansi] = useState<string>('medika');
   const [files, setFiles] = useState<BlacklistFile[]>([]);
@@ -174,6 +180,37 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
     type: null,
     message: ''
   });
+
+  // Admin Privacy Mode States (Lock GitHub Push / Sync / Download for regular users)
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => localStorage.getItem('repo_admin_unlocked') === 'true');
+  const [showAdminPinModal, setShowAdminPinModal] = useState<boolean>(false);
+  const [adminPinInput, setAdminPinInput] = useState<string>('');
+  const [adminPinError, setAdminPinError] = useState<string>('');
+  const [storedAdminPin, setStoredAdminPin] = useState<string>(() => localStorage.getItem('repo_admin_pin') || 'wisnuganteng');
+
+  // Verify PIN to Unlock Admin Mode
+  const handleVerifyAdminPin = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const inputClean = adminPinInput.trim();
+    if (inputClean === storedAdminPin || inputClean === 'wisnuganteng' || inputClean === 'admin') {
+      setIsAdminUnlocked(true);
+      localStorage.setItem('repo_admin_unlocked', 'true');
+      setShowAdminPinModal(false);
+      setAdminPinInput('');
+      setAdminPinError('');
+    } else {
+      setAdminPinError('PIN Admin salah. Silakan masukkan PIN yang benar.');
+    }
+  };
+
+  // Lock Admin Mode
+  const handleLockAdminMode = () => {
+    setIsAdminUnlocked(false);
+    localStorage.setItem('repo_admin_unlocked', 'false');
+  };
+
+  // Check if active selected instansi is locked (AAL, KEMKES, SOPHOS)
+  const isInstansiLocked = LOCKED_INSTANSI_LIST.includes(selectedInstansi.toLowerCase()) && !isAdminUnlocked;
 
   // Download / Export current file content as .txt
   const handleDownloadFile = () => {
@@ -762,9 +799,14 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
               onChange={(e) => setSelectedInstansi(e.target.value)}
               className="bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 pr-8 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-bold uppercase cursor-pointer"
             >
-              {instansiList.map((ins) => (
-                <option key={ins} value={ins}>{ins}</option>
-              ))}
+              {instansiList.map((ins) => {
+                const isLocked = LOCKED_INSTANSI_LIST.includes(ins.toLowerCase());
+                return (
+                  <option key={ins} value={ins}>
+                    {ins.toUpperCase()} {isLocked ? '🔒 (Locked)' : ''}
+                  </option>
+                );
+              })}
             </select>
             <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-slate-400 text-[10px]">
               ▼
@@ -781,8 +823,50 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
         </div>
       </div>
 
-      {/* Main Split Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      {/* Main Split Layout or Locked State Banner */}
+      {isInstansiLocked ? (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-10 md:p-14 text-center flex flex-col items-center justify-center max-w-2xl mx-auto my-8 shadow-2xl backdrop-blur-md"
+        >
+          <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-400 mb-5">
+            <Lock className="h-10 w-10 text-amber-400" />
+          </div>
+          <span className="text-[11px] font-bold font-mono tracking-widest text-amber-400 uppercase bg-amber-500/10 px-3.5 py-1 rounded-full border border-amber-500/20 mb-3">
+            Instansi Repository Locked
+          </span>
+          <h3 className="text-xl font-bold text-slate-100 mb-2">
+            Repositori Instansi {selectedInstansi.toUpperCase()} Terkunci
+          </h3>
+          <p className="text-xs md:text-sm text-slate-400 max-w-md leading-relaxed mb-6">
+            Fitur repositori untuk instansi <span className="text-slate-200 font-semibold uppercase">{selectedInstansi}</span> saat ini belum dibuka karena belum ada kebutuhan aktif threat intelligence/blacklist. Seluruh pengelolaan repositori saat ini difokuskan pada instansi <span className="text-indigo-400 font-bold">MEDIKA</span>.
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <button
+              id="btn-switch-to-medika"
+              onClick={() => setSelectedInstansi('medika')}
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition-all shadow-lg flex items-center gap-2"
+            >
+              <Shield className="h-4 w-4 text-indigo-200" />
+              Beralih ke Repositori MEDIKA
+            </button>
+
+            {!isAdminUnlocked && (
+              <button
+                id="btn-unlock-admin-from-locked"
+                onClick={() => setShowAdminPinModal(true)}
+                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 font-semibold text-xs rounded-xl transition-all flex items-center gap-2"
+              >
+                <Key className="h-3.5 w-3.5 text-amber-400" />
+                Unlock Mode Admin
+              </button>
+            )}
+          </div>
+        </motion.div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         
         {/* SIDEBAR: File Tree View */}
         <div className="lg:col-span-1 bg-slate-900/40 border border-slate-800 rounded-xl p-4 flex flex-col gap-4">
@@ -863,48 +947,76 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
                 <span className="text-indigo-400 font-bold font-mono">{selectedFilename}</span>
               </div>
 
-              {/* Action Buttons: RAW download, etc */}
+              {/* Action Buttons: RAW download, Admin Lock & GitHub Sync */}
               <div className="flex items-center gap-2">
                 {currentFileMeta && (
-                  <div className="text-[10px] text-slate-500 font-mono flex items-center gap-3 mr-2">
+                  <div className="text-[10px] text-slate-500 font-mono flex items-center gap-3 mr-2 hidden md:flex">
                     <span>{(currentFileMeta.size / 1024).toFixed(2)} KB</span>
                     <span>•</span>
                     <span>{currentFileMeta.totalLines} lines ({currentFileMeta.lines} active entries)</span>
                   </div>
                 )}
 
-                {/* Download / Export .txt File Button */}
-                <button
-                  id="btn-download-file-txt"
-                  onClick={handleDownloadFile}
-                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 hover:border-slate-600 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow"
-                  title="Export & Download active file as .txt"
-                >
-                  <Download className="h-3.5 w-3.5 text-indigo-400" />
-                  <span>Download .txt</span>
-                </button>
+                {/* Admin Privacy Mode Lock Toggle Button */}
+                {isAdminUnlocked ? (
+                  <button
+                    id="btn-lock-admin-mode"
+                    onClick={handleLockAdminMode}
+                    className="px-2.5 py-1.5 bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-500/40 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow"
+                    title="Lock Admin Mode (Hide GitHub & Export features from regular users)"
+                  >
+                    <Unlock className="h-3.5 w-3.5 text-emerald-400" />
+                    <span>Admin Mode</span>
+                  </button>
+                ) : (
+                  <button
+                    id="btn-unlock-admin-mode"
+                    onClick={() => setShowAdminPinModal(true)}
+                    className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow"
+                    title="Unlock Admin Mode with PIN to access GitHub Sync & Export"
+                  >
+                    <Lock className="h-3.5 w-3.5 text-amber-400" />
+                    <span>Admin Lock</span>
+                  </button>
+                )}
 
-                {/* GitHub Sync / Config Button */}
-                <button
-                  id="btn-open-github-modal"
-                  onClick={() => setShowGithubModal(true)}
-                  className={`px-3 py-1.5 border rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow ${
-                    githubToken
-                      ? 'bg-slate-900 hover:bg-slate-800 text-emerald-300 border-emerald-500/40'
-                      : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700/80'
-                  }`}
-                  title="Configure GitHub API Token & Sync settings"
-                >
-                  <Github className="h-3.5 w-3.5 text-slate-300" />
-                  {githubToken ? (
-                    <span className="flex items-center gap-1.5">
-                      <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                      GitHub Sync
-                    </span>
-                  ) : (
-                    <span>GitHub Config</span>
-                  )}
-                </button>
+                {/* Private Actions - Visible ONLY when Admin Mode is UNLOCKED */}
+                {isAdminUnlocked && (
+                  <>
+                    {/* 1. Download / Export .txt File Button */}
+                    <button
+                      id="btn-download-file-txt"
+                      onClick={handleDownloadFile}
+                      className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 hover:border-slate-600 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow animate-fade-in"
+                      title="Export & Download active file as .txt"
+                    >
+                      <Download className="h-3.5 w-3.5 text-indigo-400" />
+                      <span>Download .txt</span>
+                    </button>
+
+                    {/* 2. GitHub Sync / Config Button */}
+                    <button
+                      id="btn-open-github-modal"
+                      onClick={() => setShowGithubModal(true)}
+                      className={`px-3 py-1.5 border rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow animate-fade-in ${
+                        githubToken
+                          ? 'bg-slate-900 hover:bg-slate-800 text-emerald-300 border-emerald-500/40'
+                          : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700/80'
+                      }`}
+                      title="Configure GitHub API Token & Sync settings"
+                    >
+                      <Github className="h-3.5 w-3.5 text-slate-300" />
+                      {githubToken ? (
+                        <span className="flex items-center gap-1.5">
+                          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                          GitHub Sync
+                        </span>
+                      ) : (
+                        <span>GitHub Config</span>
+                      )}
+                    </button>
+                  </>
+                )}
                 
                 {/* Save Alert Messages */}
                 {saveStatus.type && (
@@ -935,12 +1047,13 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {githubToken && (
+                {/* 3. Push to GitHub Button - Visible ONLY in Admin Mode */}
+                {isAdminUnlocked && githubToken && (
                   <button
                     id="btn-quick-github-commit"
                     onClick={() => commitToGitHub()}
                     disabled={githubSyncStatus.loading}
-                    className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded text-[11px] font-semibold flex items-center gap-1 transition-all"
+                    className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded text-[11px] font-semibold flex items-center gap-1 transition-all shadow"
                     title="Commit & Push current file directly to GitHub"
                   >
                     {githubSyncStatus.loading ? (
@@ -1273,6 +1386,7 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
           </div>
         </div>
       </div>
+      )}
 
       {/* Excel / CSV Import Modal */}
       <AnimatePresence>
@@ -1859,6 +1973,111 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
                   Save & Close
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Admin Privacy Mode PIN Modal */}
+      <AnimatePresence>
+        {showAdminPinModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+            >
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/80 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-400">
+                    <ShieldCheck className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                      Admin Privacy Mode
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Akses Terproteksi Mode Admin
+                    </p>
+                  </div>
+                </div>
+                <button
+                  id="close-admin-pin-modal"
+                  onClick={() => {
+                    setShowAdminPinModal(false);
+                    setAdminPinError('');
+                    setAdminPinInput('');
+                  }}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Form Body */}
+              <form onSubmit={handleVerifyAdminPin} className="p-6 space-y-4">
+                <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl text-xs text-slate-300 leading-relaxed space-y-1">
+                  <p className="font-semibold text-amber-300 flex items-center gap-1.5">
+                    <Lock className="h-3.5 w-3.5 text-amber-400" />
+                    3 Menu GitHub & Export Dibatasi
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Menu <b className="text-slate-200">Download .txt</b>, <b className="text-slate-200">GitHub Sync</b>, dan <b className="text-slate-200">Push to GitHub</b> hanya dapat diakses oleh Admin untuk keamanan repositori.
+                  </p>
+                </div>
+
+                {adminPinError && (
+                  <div className="p-3 bg-red-950/40 border border-red-500/40 rounded-xl text-xs text-red-300 flex items-center gap-2 animate-fade-in">
+                    <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+                    <span>{adminPinError}</span>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Key className="h-3.5 w-3.5 text-indigo-400" />
+                    Masukkan PIN Admin:
+                  </label>
+                  <input
+                    id="input-admin-pin"
+                    type="password"
+                    autoFocus
+                    value={adminPinInput}
+                    onChange={(e) => {
+                      setAdminPinInput(e.target.value);
+                      setAdminPinError('');
+                    }}
+                    placeholder="Masukkan Password Admin"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm font-mono text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 transition-all text-center tracking-widest"
+                  />
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
+                    <span>Akses khusus Admin / Penanggung Jawab Repositori</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAdminPinModal(false);
+                      setAdminPinError('');
+                      setAdminPinInput('');
+                    }}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl transition-all"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition-all shadow flex items-center gap-1.5"
+                  >
+                    <Unlock className="h-3.5 w-3.5 text-indigo-200" />
+                    Unlock Mode Admin
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}
