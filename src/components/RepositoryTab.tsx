@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Database, 
   Search, 
@@ -24,8 +24,15 @@ import {
   Copy,
   User,
   ShieldAlert,
-  AlertTriangle
+  AlertTriangle,
+  FileSpreadsheet,
+  UploadCloud,
+  CheckCircle2,
+  Filter,
+  Layers,
+  FileCheck
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 interface BlacklistFile {
   name: string;
@@ -127,6 +134,24 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
   const [newEntry, setNewEntry] = useState<string>('');
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
   const [copiedLine, setCopiedLine] = useState<number | null>(null);
+
+  // Excel / CSV / Text Importer States
+  interface ParsedIPItem {
+    ip: string;
+    originalRow: number;
+    status: 'new' | 'duplicate_in_file' | 'already_in_repo';
+    rawRowData?: Record<string, any>;
+  }
+
+  const [showImportModal, setShowImportModal] = useState<boolean>(false);
+  const [importSourceType, setImportSourceType] = useState<'file' | 'paste'>('file');
+  const [importFileName, setImportFileName] = useState<string>('');
+  const [rawPasteText, setRawPasteText] = useState<string>('');
+  const [parsedColumns, setParsedColumns] = useState<string[]>([]);
+  const [selectedTargetColumn, setSelectedTargetColumn] = useState<string>('source.ip');
+  const [parsedRawRows, setParsedRawRows] = useState<Record<string, any>[]>([]);
+  const [parsedIPList, setParsedIPList] = useState<ParsedIPItem[]>([]);
+  const [importFilterMode, setImportFilterMode] = useState<'all' | 'new_only' | 'duplicates_only'>('all');
 
   // Fetch file list for selected instansi
   const fetchFiles = async (instansi: string) => {
@@ -235,6 +260,187 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
     const lower = searchTerm.toLowerCase();
     return structuredEntries.filter(entry => entry.trimmed.toLowerCase().includes(lower));
   }, [structuredEntries, searchTerm]);
+
+  // Extraction & Auto-Filtering Helper for Excel / CSV / Text
+  const extractAndFilterIPs = (rows: Record<string, any>[], columnKey: string) => {
+    const items: ParsedIPItem[] = [];
+    const seenInFile = new Set<string>();
+    const existingInRepo = new Set(structuredEntries.map(e => e.trimmed.toLowerCase()));
+    const ipRegex = /\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/;
+
+    rows.forEach((row, idx) => {
+      let rawVal = row[columnKey];
+      if (rawVal === undefined || rawVal === null || rawVal === '') {
+        const keyMatch = Object.keys(row).find(k => k.trim().toLowerCase() === columnKey.trim().toLowerCase());
+        if (keyMatch) rawVal = row[keyMatch];
+      }
+
+      if (rawVal !== undefined && rawVal !== null) {
+        const valStr = String(rawVal).replace(/["']/g, '').trim();
+        const match = valStr.match(ipRegex);
+        if (match) {
+          const cleanIp = match[0];
+          const lowerIp = cleanIp.toLowerCase();
+
+          let status: 'new' | 'duplicate_in_file' | 'already_in_repo' = 'new';
+          if (existingInRepo.has(lowerIp)) {
+            status = 'already_in_repo';
+          } else if (seenInFile.has(lowerIp)) {
+            status = 'duplicate_in_file';
+          } else {
+            seenInFile.add(lowerIp);
+          }
+
+          items.push({
+            ip: cleanIp,
+            originalRow: idx + 2,
+            status,
+            rawRowData: row
+          });
+        }
+      }
+    });
+
+    setParsedIPList(items);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const uploadedFile = e.target.files?.[0];
+    if (!uploadedFile) return;
+
+    setImportFileName(uploadedFile.name);
+    const reader = new FileReader();
+
+    reader.onload = (event) => {
+      try {
+        const buffer = event.target?.result as ArrayBuffer;
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+
+        const jsonRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '' });
+
+        let cols: string[] = [];
+        if (jsonRows.length > 0) {
+          cols = Object.keys(jsonRows[0]);
+        } else {
+          cols = ['source.ip'];
+        }
+
+        setParsedColumns(cols);
+        setParsedRawRows(jsonRows);
+
+        const preferredCols = ['source.ip', 'source_ip', 'src_ip', 'source ip', 'src ip', 'ip', 'source', 'sourceip'];
+        const autoCol = cols.find(c => preferredCols.includes(c.trim().toLowerCase())) || cols[0] || 'source.ip';
+
+        setSelectedTargetColumn(autoCol);
+        extractAndFilterIPs(jsonRows, autoCol);
+      } catch (err: any) {
+        console.error("Failed to parse file:", err);
+        setSaveStatus({ type: 'error', message: `Failed to parse file: ${err.message}` });
+      }
+    };
+
+    reader.readAsArrayBuffer(uploadedFile);
+  };
+
+  const handleTargetColumnChange = (newCol: string) => {
+    setSelectedTargetColumn(newCol);
+    if (parsedRawRows.length > 0) {
+      extractAndFilterIPs(parsedRawRows, newCol);
+    }
+  };
+
+  const handlePasteTextChange = (text: string) => {
+    setRawPasteText(text);
+    if (!text.trim()) {
+      setParsedIPList([]);
+      setParsedRawRows([]);
+      setParsedColumns([]);
+      return;
+    }
+
+    if (text.includes(',') || text.includes('source.ip') || text.includes('\t')) {
+      try {
+        const workbook = XLSX.read(text, { type: 'string' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '' });
+
+        if (jsonRows.length > 0) {
+          const cols = Object.keys(jsonRows[0]);
+          setParsedColumns(cols);
+          setParsedRawRows(jsonRows);
+
+          const preferredCols = ['source.ip', 'source_ip', 'src_ip', 'source ip', 'src ip', 'ip', 'source', 'sourceip'];
+          const autoCol = cols.find(c => preferredCols.includes(c.trim().toLowerCase())) || cols[0] || 'source.ip';
+
+          setSelectedTargetColumn(autoCol);
+          extractAndFilterIPs(jsonRows, autoCol);
+          return;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    const lines = text.split('\n');
+    const items: ParsedIPItem[] = [];
+    const seenInFile = new Set<string>();
+    const existingInRepo = new Set(structuredEntries.map(e => e.trimmed.toLowerCase()));
+    const ipRegex = /\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/g;
+
+    lines.forEach((line, idx) => {
+      const matches = line.match(ipRegex);
+      if (matches) {
+        matches.forEach(ipMatch => {
+          const cleanIp = ipMatch.trim();
+          const lowerIp = cleanIp.toLowerCase();
+
+          let status: 'new' | 'duplicate_in_file' | 'already_in_repo' = 'new';
+          if (existingInRepo.has(lowerIp)) {
+            status = 'already_in_repo';
+          } else if (seenInFile.has(lowerIp)) {
+            status = 'duplicate_in_file';
+          } else {
+            seenInFile.add(lowerIp);
+          }
+
+          items.push({
+            ip: cleanIp,
+            originalRow: idx + 1,
+            status
+          });
+        });
+      }
+    });
+
+    setParsedIPList(items);
+  };
+
+  const handleConfirmImport = () => {
+    const newIPs = parsedIPList.filter(i => i.status === 'new').map(i => i.ip);
+    if (newIPs.length === 0) return;
+
+    const currentLines = fileContent.split('\n');
+    if (currentLines.length > 0 && currentLines[currentLines.length - 1].trim() !== '') {
+      currentLines.push('');
+    }
+
+    const updatedContent = [...currentLines, ...newIPs].join('\n');
+    const duplicatesFiltered = parsedIPList.length - newIPs.length;
+
+    saveFileContent(
+      updatedContent,
+      `Imported ${newIPs.length} unique IPs from ${importFileName || 'Excel/CSV input'} (${duplicatesFiltered} duplicates auto-filtered)`
+    );
+
+    setShowImportModal(false);
+    setParsedIPList([]);
+    setParsedRawRows([]);
+    setRawPasteText('');
+    setImportFileName('');
+  };
 
   // Handle adding an individual entry
   const handleAddEntry = () => {
@@ -658,6 +864,16 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
                         <Plus className="h-3.5 w-3.5" />
                         Add Entry
                       </button>
+
+                      <button
+                        id="open-import-excel-modal"
+                        onClick={() => setShowImportModal(true)}
+                        className="px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 hover:border-emerald-500/50 font-bold text-xs rounded-lg transition-all flex items-center gap-2 shrink-0 shadow"
+                        title="Import IPs from Excel or CSV file"
+                      >
+                        <FileSpreadsheet className="h-4 w-4 text-emerald-400" />
+                        Import Excel / CSV
+                      </button>
                     </div>
 
                     {/* Filter bar */}
@@ -771,6 +987,298 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
           </div>
         </div>
       </div>
+
+      {/* Excel / CSV Import Modal */}
+      <AnimatePresence>
+        {showImportModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              {/* Modal Header */}
+              <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400">
+                    <FileSpreadsheet className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                      Import IP Repository
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        Auto Deduplication
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Import Excel (.xlsx), CSV, or text files and auto-filter duplicate IP entries
+                    </p>
+                  </div>
+                </div>
+                <button
+                  id="close-import-modal"
+                  onClick={() => setShowImportModal(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Modal Content - Scrollable */}
+              <div className="p-6 overflow-y-auto space-y-5 flex-1 custom-scrollbar">
+                {/* Source Selection Tabs */}
+                <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+                  <button
+                    id="tab-import-file"
+                    onClick={() => setImportSourceType('file')}
+                    className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all flex items-center gap-2 ${
+                      importSourceType === 'file'
+                        ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+                        : 'bg-slate-800/50 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-transparent'
+                    }`}
+                  >
+                    <UploadCloud className="h-4 w-4" />
+                    Upload Excel / CSV File
+                  </button>
+                  <button
+                    id="tab-import-paste"
+                    onClick={() => setImportSourceType('paste')}
+                    className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all flex items-center gap-2 ${
+                      importSourceType === 'paste'
+                        ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+                        : 'bg-slate-800/50 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-transparent'
+                    }`}
+                  >
+                    <Layers className="h-4 w-4" />
+                    Paste Text / Copy-Paste Data
+                  </button>
+                </div>
+
+                {/* Source Input Area */}
+                {importSourceType === 'file' ? (
+                  <div className="space-y-4">
+                    <div className="border-2 border-dashed border-slate-700 hover:border-emerald-500/50 rounded-xl p-6 text-center bg-slate-950/40 transition-colors cursor-pointer relative group">
+                      <input
+                        id="excel-file-input"
+                        type="file"
+                        accept=".xlsx, .xls, .csv, .txt"
+                        onChange={handleFileUpload}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                      />
+                      <div className="flex flex-col items-center gap-2">
+                        <UploadCloud className="h-10 w-10 text-slate-400 group-hover:text-emerald-400 transition-colors" />
+                        <div>
+                          <p className="text-sm font-semibold text-slate-200">
+                            {importFileName ? importFileName : 'Click or Drag & Drop Excel / CSV file here'}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-1">
+                            Supports .xlsx, .xls, .csv, or plain text (.txt)
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Target Column Selector if file loaded */}
+                    {parsedColumns.length > 0 && (
+                      <div className="flex items-center justify-between bg-slate-800/40 border border-slate-700/60 p-3 rounded-xl">
+                        <div className="flex items-center gap-2">
+                          <Filter className="h-4 w-4 text-emerald-400" />
+                          <span className="text-xs font-medium text-slate-300">Target IP Column:</span>
+                        </div>
+                        <select
+                          id="select-target-column"
+                          value={selectedTargetColumn}
+                          onChange={(e) => handleTargetColumnChange(e.target.value)}
+                          className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-emerald-500"
+                        >
+                          {parsedColumns.map((col, i) => (
+                            <option key={i} value={col}>
+                              {col}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                      Paste CSV content or line-separated IP addresses:
+                    </label>
+                    <textarea
+                      id="input-paste-ip-text"
+                      rows={5}
+                      value={rawPasteText}
+                      onChange={(e) => handlePasteTextChange(e.target.value)}
+                      placeholder={`source.ip, destination.ip, description\n192.168.1.1, 10.0.0.1, Gateway\n10.0.0.15, 10.0.0.2, Host A`}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 font-mono focus:outline-none focus:border-emerald-500/50 resize-none"
+                    />
+                  </div>
+                )}
+
+                {/* Parsing Summary & Statistics */}
+                {parsedIPList.length > 0 && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-4 gap-3">
+                      <div className="bg-slate-800/40 border border-slate-700/50 p-3 rounded-xl text-center">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Detected</span>
+                        <div className="text-lg font-bold text-slate-100 mt-0.5">{parsedIPList.length}</div>
+                      </div>
+                      <div className="bg-emerald-950/30 border border-emerald-500/30 p-3 rounded-xl text-center">
+                        <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider">New Unique</span>
+                        <div className="text-lg font-bold text-emerald-300 mt-0.5">
+                          {parsedIPList.filter(i => i.status === 'new').length}
+                        </div>
+                      </div>
+                      <div className="bg-amber-950/30 border border-amber-500/30 p-3 rounded-xl text-center">
+                        <span className="text-[10px] uppercase font-bold text-amber-400 tracking-wider">File Duplicates</span>
+                        <div className="text-lg font-bold text-amber-300 mt-0.5">
+                          {parsedIPList.filter(i => i.status === 'duplicate_in_file').length}
+                        </div>
+                      </div>
+                      <div className="bg-purple-950/30 border border-purple-500/30 p-3 rounded-xl text-center">
+                        <span className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">In Repository</span>
+                        <div className="text-lg font-bold text-purple-300 mt-0.5">
+                          {parsedIPList.filter(i => i.status === 'already_in_repo').length}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Filter Mode Filter Tabs */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                        <button
+                          id="btn-filter-import-all"
+                          onClick={() => setImportFilterMode('all')}
+                          className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all ${
+                            importFilterMode === 'all'
+                              ? 'bg-slate-800 text-slate-100 shadow'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          All ({parsedIPList.length})
+                        </button>
+                        <button
+                          id="btn-filter-import-new"
+                          onClick={() => setImportFilterMode('new_only')}
+                          className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all ${
+                            importFilterMode === 'new_only'
+                              ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 shadow'
+                              : 'text-slate-400 hover:text-emerald-300'
+                          }`}
+                        >
+                          New Only ({parsedIPList.filter(i => i.status === 'new').length})
+                        </button>
+                        <button
+                          id="btn-filter-import-duplicates"
+                          onClick={() => setImportFilterMode('duplicates_only')}
+                          className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all ${
+                            importFilterMode === 'duplicates_only'
+                              ? 'bg-amber-600/30 text-amber-300 border border-amber-500/40 shadow'
+                              : 'text-slate-400 hover:text-amber-300'
+                          }`}
+                        >
+                          Duplicates ({parsedIPList.filter(i => i.status !== 'new').length})
+                        </button>
+                      </div>
+
+                      <span className="text-[11px] text-slate-400">
+                        Showing preview of extracted IPs
+                      </span>
+                    </div>
+
+                    {/* Preview Table */}
+                    <div className="max-h-56 overflow-y-auto border border-slate-800 rounded-xl bg-slate-950/60 custom-scrollbar">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-800 bg-slate-900/80 text-[11px] uppercase text-slate-400 font-bold sticky top-0">
+                            <th className="py-2 px-3 w-16">Row</th>
+                            <th className="py-2 px-3">IP Address</th>
+                            <th className="py-2 px-3">Status</th>
+                            <th className="py-2 px-3 text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60 text-xs font-mono">
+                          {parsedIPList
+                            .filter(item => {
+                              if (importFilterMode === 'new_only') return item.status === 'new';
+                              if (importFilterMode === 'duplicates_only') return item.status !== 'new';
+                              return true;
+                            })
+                            .slice(0, 100)
+                            .map((item, index) => (
+                              <tr key={index} className="hover:bg-slate-800/30 transition-colors">
+                                <td className="py-2 px-3 text-slate-400">{item.originalRow}</td>
+                                <td className="py-2 px-3 font-semibold text-slate-200">{item.ip}</td>
+                                <td className="py-2 px-3 font-sans">
+                                  {item.status === 'new' && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                      <CheckCircle2 className="h-3 w-3" /> New
+                                    </span>
+                                  )}
+                                  {item.status === 'duplicate_in_file' && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                      Duplicate in File
+                                    </span>
+                                  )}
+                                  {item.status === 'already_in_repo' && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                                      Already in Repository
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 text-right font-sans text-[11px] text-slate-400">
+                                  {item.status === 'new' ? (
+                                    <span className="text-emerald-400 font-medium">Will Import</span>
+                                  ) : (
+                                    <span className="text-slate-400 line-through">Filtered Out</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/80 flex items-center justify-between shrink-0">
+                <span className="text-xs text-slate-400">
+                  {parsedIPList.filter(i => i.status === 'new').length > 0 ? (
+                    <span className="text-emerald-400 font-medium">
+                      {parsedIPList.filter(i => i.status === 'new').length} unique IPs ready to append to repository
+                    </span>
+                  ) : (
+                    'Select or paste data containing IP addresses'
+                  )}
+                </span>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    id="btn-cancel-import"
+                    onClick={() => setShowImportModal(false)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    id="btn-confirm-import-ips"
+                    onClick={handleConfirmImport}
+                    disabled={parsedIPList.filter(i => i.status === 'new').length === 0}
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-xs rounded-xl transition-all shadow-lg shadow-emerald-950/50 flex items-center gap-2"
+                  >
+                    <FileCheck className="h-4 w-4" />
+                    Import {parsedIPList.filter(i => i.status === 'new').length} New IPs
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
