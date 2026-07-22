@@ -591,17 +591,19 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
   };
 
   const handlePasteTextChange = (text: string) => {
-    setRawPasteText(text);
-    if (!text.trim()) {
+    // Automatically strip double quotes (") and single quotes (') attached when copying multi-line cells from Excel / Google Sheets
+    const sanitizedText = text.replace(/["']/g, '');
+    setRawPasteText(sanitizedText);
+    if (!sanitizedText.trim()) {
       setParsedIPList([]);
       setParsedRawRows([]);
       setParsedColumns([]);
       return;
     }
 
-    if (text.includes(',') || text.includes('source.ip') || text.includes('\t')) {
+    if (sanitizedText.includes(',') || sanitizedText.includes('source.ip') || sanitizedText.includes('\t')) {
       try {
-        const workbook = XLSX.read(text, { type: 'string' });
+        const workbook = XLSX.read(sanitizedText, { type: 'string' });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         const jsonRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '' });
@@ -623,7 +625,7 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
       }
     }
 
-    const lines = text.split('\n');
+    const lines = sanitizedText.split('\n');
     const items: ParsedIPItem[] = [];
     const seenInFile = new Set<string>();
     const existingInRepo = new Set(structuredEntries.map(e => e.trimmed.toLowerCase()));
@@ -716,7 +718,7 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
 
   // Handle adding an individual entry
   const handleAddEntry = () => {
-    const trimmedEntry = newEntry.trim();
+    const trimmedEntry = newEntry.replace(/["']/g, '').trim();
     if (!trimmedEntry) return;
 
     // Check for duplicates
@@ -1503,9 +1505,15 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                      Paste CSV content or line-separated IP addresses:
-                    </label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-semibold text-slate-300">
+                        Paste CSV content or line-separated IP addresses:
+                      </label>
+                      <span className="text-[10px] font-mono font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md flex items-center gap-1 shadow-sm">
+                        <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
+                        Auto-Clean Quotes (&quot;) Active
+                      </span>
+                    </div>
                     <textarea
                       id="input-paste-ip-text"
                       rows={5}
