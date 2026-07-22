@@ -152,6 +152,8 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
   const [parsedRawRows, setParsedRawRows] = useState<Record<string, any>[]>([]);
   const [parsedIPList, setParsedIPList] = useState<ParsedIPItem[]>([]);
   const [importFilterMode, setImportFilterMode] = useState<'all' | 'new_only' | 'duplicates_only'>('all');
+  const [copiedFormattedOutput, setCopiedFormattedOutput] = useState<boolean>(false);
+  const [showFormattedOutputPreview, setShowFormattedOutputPreview] = useState<boolean>(false);
 
   // Fetch file list for selected instansi
   const fetchFiles = async (instansi: string) => {
@@ -440,6 +442,39 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
     setParsedRawRows([]);
     setRawPasteText('');
     setImportFileName('');
+  };
+
+  // Formatted Output computation for New Unique IPs (Source IP, Source Geo Country Name, Destination IP, Destination Port)
+  const formattedNewUniqueOutput = useMemo(() => {
+    const newItems = parsedIPList.filter(i => i.status === 'new');
+    if (newItems.length === 0) return '';
+
+    const getRowVal = (row: Record<string, any> | undefined, candidates: string[], fallback: string = '-') => {
+      if (!row) return fallback;
+      const keys = Object.keys(row);
+      for (const cand of candidates) {
+        const candLower = cand.toLowerCase().trim();
+        const foundKey = keys.find(k => k.toLowerCase().trim() === candLower);
+        if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null && String(row[foundKey]).trim() !== '') {
+          return String(row[foundKey]).replace(/["']/g, '').trim();
+        }
+      }
+      return fallback;
+    };
+
+    const sourceIPs = newItems.map(item => getRowVal(item.rawRowData, ['source.ip', 'source_ip', 'src_ip', 'source ip', 'source', 'ip'], item.ip));
+    const sourceCountries = newItems.map(item => getRowVal(item.rawRowData, ['source.geo.country_name', 'source.geo.country_iso_code', 'source_geo_country_name', 'source_country', 'source country', 'country_name', 'country', 'geo', 'source.country'], '-'));
+    const destIPs = newItems.map(item => getRowVal(item.rawRowData, ['destination.ip', 'destination_ip', 'dst_ip', 'destination ip', 'destination', 'dest_ip', 'dest ip'], '-'));
+    const destPorts = newItems.map(item => getRowVal(item.rawRowData, ['destination.port', 'destination_port', 'dst_port', 'destination port', 'dest_port', 'dest port', 'port'], '-'));
+
+    return `Source IP :\n${sourceIPs.join('\n')}\n\nSoure IP Country : \n${sourceCountries.join('\n')}\n\nDestination IP :\n${destIPs.join('\n')}\n\nDestination Port :\n${destPorts.join('\n')}`;
+  }, [parsedIPList]);
+
+  const handleCopyFormattedOutput = () => {
+    if (!formattedNewUniqueOutput) return;
+    navigator.clipboard.writeText(formattedNewUniqueOutput);
+    setCopiedFormattedOutput(true);
+    setTimeout(() => setCopiedFormattedOutput(false), 3000);
   };
 
   // Handle adding an individual entry
@@ -1125,11 +1160,33 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
                         <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Detected</span>
                         <div className="text-lg font-bold text-slate-100 mt-0.5">{parsedIPList.length}</div>
                       </div>
-                      <div className="bg-emerald-950/30 border border-emerald-500/30 p-3 rounded-xl text-center">
-                        <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider">New Unique</span>
-                        <div className="text-lg font-bold text-emerald-300 mt-0.5">
-                          {parsedIPList.filter(i => i.status === 'new').length}
+                      <div className="bg-emerald-950/30 border border-emerald-500/30 p-3 rounded-xl text-center flex flex-col items-center justify-between">
+                        <div>
+                          <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider">New Unique</span>
+                          <div className="text-lg font-bold text-emerald-300 mt-0.5">
+                            {parsedIPList.filter(i => i.status === 'new').length}
+                          </div>
                         </div>
+                        {parsedIPList.filter(i => i.status === 'new').length > 0 && (
+                          <button
+                            id="btn-copy-card-formatted-output"
+                            onClick={handleCopyFormattedOutput}
+                            className="mt-1 px-2 py-0.5 text-[10px] bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-300 border border-emerald-500/30 rounded-md font-semibold transition-all inline-flex items-center gap-1 shadow"
+                            title="Copy formatted Source IP, Country, Dest IP, and Port text"
+                          >
+                            {copiedFormattedOutput ? (
+                              <>
+                                <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                                Copied!
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="h-3 w-3" />
+                                Copy Output
+                              </>
+                            )}
+                          </button>
+                        )}
                       </div>
                       <div className="bg-amber-950/30 border border-amber-500/30 p-3 rounded-xl text-center">
                         <span className="text-[10px] uppercase font-bold text-amber-400 tracking-wider">File Duplicates</span>
@@ -1144,6 +1201,64 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
                         </div>
                       </div>
                     </div>
+
+                    {/* Formatted Output Action / Toggle Bar */}
+                    <div className="flex items-center justify-between bg-emerald-950/20 border border-emerald-500/30 p-3 rounded-xl">
+                      <div className="flex items-center gap-2">
+                        <Copy className="h-4 w-4 text-emerald-400" />
+                        <div>
+                          <p className="text-xs font-bold text-slate-200">Copy New Unique Formatted Metadata</p>
+                          <p className="text-[11px] text-slate-400">Extracts Source IP, Source Country, Destination IP, and Destination Port from Excel</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          id="btn-toggle-formatted-preview"
+                          onClick={() => setShowFormattedOutputPreview(!showFormattedOutputPreview)}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition-all"
+                        >
+                          {showFormattedOutputPreview ? 'Hide Preview' : 'Preview Format'}
+                        </button>
+                        <button
+                          id="btn-copy-formatted-banner"
+                          onClick={handleCopyFormattedOutput}
+                          disabled={parsedIPList.filter(i => i.status === 'new').length === 0}
+                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 shadow"
+                        >
+                          {copiedFormattedOutput ? (
+                            <>
+                              <CheckCircle2 className="h-3.5 w-3.5 text-white" />
+                              Copied Format!
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="h-3.5 w-3.5" />
+                              Copy Formatted Output
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Formatted Textarea Preview */}
+                    {showFormattedOutputPreview && (
+                      <div className="bg-slate-950 border border-emerald-500/30 p-4 rounded-xl space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                            <Copy className="h-3.5 w-3.5" /> Formatted Text Output (Extracted from Excel)
+                          </span>
+                          <span className="text-[11px] text-slate-400">
+                            {parsedIPList.filter(i => i.status === 'new').length} New Unique Entries
+                          </span>
+                        </div>
+                        <textarea
+                          readOnly
+                          rows={10}
+                          value={formattedNewUniqueOutput}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs text-emerald-300 font-mono focus:outline-none resize-none custom-scrollbar"
+                        />
+                      </div>
+                    )}
 
                     {/* Filter Mode Filter Tabs */}
                     <div className="flex items-center justify-between">
