@@ -30,7 +30,14 @@ import {
   CheckCircle2,
   Filter,
   Layers,
-  FileCheck
+  FileCheck,
+  Download,
+  Github,
+  Settings,
+  ExternalLink,
+  AlertCircle,
+  CloudDownload,
+  CloudUpload
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -155,6 +162,194 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
   const [copiedFormattedOutput, setCopiedFormattedOutput] = useState<boolean>(false);
   const [showFormattedOutputPreview, setShowFormattedOutputPreview] = useState<boolean>(false);
 
+  // GitHub Integration & Auto-Sync States
+  const [showGithubModal, setShowGithubModal] = useState<boolean>(false);
+  const [githubToken, setGithubToken] = useState<string>(() => localStorage.getItem('github_pat') || '');
+  const [githubRepo, setGithubRepo] = useState<string>(() => localStorage.getItem('github_repo') || 'neotechspotify/Web-Parsing-NCI');
+  const [githubBranch, setGithubBranch] = useState<string>(() => localStorage.getItem('github_branch') || 'main');
+  const [githubFilePath, setGithubFilePath] = useState<string>(() => localStorage.getItem('github_filepath') || 'database/medika/blacklists/List-IP-Blacklist.txt');
+  const [githubAutoSync, setGithubAutoSync] = useState<boolean>(() => localStorage.getItem('github_autosync') === 'true');
+  const [githubSyncStatus, setGithubSyncStatus] = useState<{ loading: boolean; type: 'success' | 'error' | null; message: string; lastSyncTime?: string }>({
+    loading: false,
+    type: null,
+    message: ''
+  });
+
+  // Download / Export current file content as .txt
+  const handleDownloadFile = () => {
+    if (!fileContent) return;
+    const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = selectedFilename || 'List-IP-Blacklist.txt';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Save GitHub Config
+  const saveGithubSettings = (pat: string, repo: string, branch: string, path: string, autoSync: boolean) => {
+    setGithubToken(pat);
+    setGithubRepo(repo);
+    setGithubBranch(branch);
+    setGithubFilePath(path);
+    setGithubAutoSync(autoSync);
+
+    localStorage.setItem('github_pat', pat);
+    localStorage.setItem('github_repo', repo);
+    localStorage.setItem('github_branch', branch);
+    localStorage.setItem('github_filepath', path);
+    localStorage.setItem('github_autosync', autoSync ? 'true' : 'false');
+  };
+
+  // Commit & Push File directly to GitHub REST API
+  const commitToGitHub = async (customContent?: string, customMsg?: string) => {
+    const pat = githubToken.trim();
+    const repoRaw = githubRepo.trim();
+    if (!pat || !repoRaw) {
+      setGithubSyncStatus({ loading: false, type: 'error', message: 'GitHub Personal Access Token and Repo Name are required.' });
+      setShowGithubModal(true);
+      return false;
+    }
+
+    const contentToPush = customContent !== undefined ? customContent : fileContent;
+    const cleanRepo = repoRaw.replace('https://github.com/', '').replace('.git', '').trim();
+    const targetBranch = githubBranch.trim() || 'main';
+    const targetPath = githubFilePath.trim() || `database/${selectedInstansi}/blacklists/${selectedFilename}`;
+
+    setGithubSyncStatus({ loading: true, type: null, message: `Committing to ${cleanRepo}:${targetPath}...` });
+
+    try {
+      // 1. Get existing file SHA if present on branch
+      let existingSha = '';
+      const getRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${targetBranch}`, {
+        headers: {
+          'Authorization': `Bearer ${pat}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+
+      if (getRes.ok) {
+        const getData = await getRes.json();
+        existingSha = getData.sha;
+      }
+
+      // 2. Base64 encode content (UTF-8 safe)
+      const utf8Bytes = new TextEncoder().encode(contentToPush);
+      let binaryString = '';
+      for (let i = 0; i < utf8Bytes.byteLength; i++) {
+        binaryString += String.fromCharCode(utf8Bytes[i]);
+      }
+      const base64Content = btoa(binaryString);
+
+      // 3. Commit/Push file via PUT request
+      const activeCount = contentToPush.split('\n').filter(l => l.trim() && !l.startsWith('#')).length;
+      const commitMsg = customMsg || `feat(repo): update ${selectedFilename} via Web UI [${activeCount} active entries]`;
+
+      const putRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${pat}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: commitMsg,
+          content: base64Content,
+          branch: targetBranch,
+          ...(existingSha ? { sha: existingSha } : {})
+        })
+      });
+
+      const putData = await putRes.json();
+
+      if (putRes.ok) {
+        const nowStr = new Date().toLocaleTimeString();
+        setGithubSyncStatus({
+          loading: false,
+          type: 'success',
+          message: `Successfully pushed commit to GitHub (${cleanRepo}/${targetBranch}) at ${nowStr}!`,
+          lastSyncTime: nowStr
+        });
+        return true;
+      } else {
+        let errMsg = putData.message || 'GitHub API error';
+        if (errMsg.includes('Resource not accessible by personal access token')) {
+          errMsg = 'Resource not accessible by personal access token. Token Anda tidak memiliki izin Write/Repo ke repository ini. Gunakan Personal Access Token Classic dengan centang centang "repo", atau jika Fine-grained token set Repository permissions -> Contents menjadi "Read and write".';
+        }
+        throw new Error(errMsg);
+      }
+    } catch (err: any) {
+      console.error('GitHub Sync Error:', err);
+      let msg = err.message || 'Unknown error';
+      if (msg.includes('Resource not accessible by personal access token')) {
+        msg = 'Resource not accessible by personal access token. Token Anda tidak memiliki izin Write/Repo. Solusi: Gunakan Personal Access Token (Classic) & centang checkbox "repo".';
+      }
+      setGithubSyncStatus({
+        loading: false,
+        type: 'error',
+        message: `GitHub Sync Failed: ${msg}`
+      });
+      return false;
+    }
+  };
+
+  // Pull latest content from GitHub repository
+  const pullFromGitHub = async () => {
+    const pat = githubToken.trim();
+    const repoRaw = githubRepo.trim();
+    if (!pat || !repoRaw) {
+      setShowGithubModal(true);
+      return;
+    }
+
+    const cleanRepo = repoRaw.replace('https://github.com/', '').replace('.git', '').trim();
+    const targetBranch = githubBranch.trim() || 'main';
+    const targetPath = githubFilePath.trim() || `database/${selectedInstansi}/blacklists/${selectedFilename}`;
+
+    setGithubSyncStatus({ loading: true, type: null, message: `Pulling from GitHub (${cleanRepo}/${targetPath})...` });
+
+    try {
+      const getRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${targetBranch}`, {
+        headers: {
+          'Authorization': `Bearer ${pat}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+
+      if (getRes.ok) {
+        const getData = await getRes.json();
+        const rawBase64 = getData.content.replace(/\n/g, '');
+        const binaryString = atob(rawBase64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const fetchedText = new TextDecoder().decode(bytes);
+
+        await saveFileContent(fetchedText, `Synced from GitHub (${cleanRepo})`);
+        const nowStr = new Date().toLocaleTimeString();
+        setGithubSyncStatus({
+          loading: false,
+          type: 'success',
+          message: `Successfully pulled latest content from GitHub (${cleanRepo})!`,
+          lastSyncTime: nowStr
+        });
+      } else {
+        const errData = await getRes.json();
+        throw new Error(errData.message || 'File not found on GitHub');
+      }
+    } catch (err: any) {
+      setGithubSyncStatus({
+        loading: false,
+        type: 'error',
+        message: `Failed to pull from GitHub: ${err.message}`
+      });
+    }
+  };
+
   // Fetch file list for selected instansi
   const fetchFiles = async (instansi: string) => {
     setLoading(true);
@@ -214,6 +409,11 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
         // Refresh metadata list
         fetchFiles(selectedInstansi);
         setTimeout(() => setSaveStatus({ type: null, message: '' }), 5000);
+
+        // Auto Sync to GitHub if enabled
+        if (githubAutoSync && githubToken && githubRepo) {
+          commitToGitHub(contentToSave, `feat(repo): ${actionMsg} [${selectedFilename}]`);
+        }
       } else {
         setSaveStatus({ type: 'error', message: `Failed to save: ${data.error}` });
       }
@@ -672,6 +872,39 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
                     <span>{currentFileMeta.totalLines} lines ({currentFileMeta.lines} active entries)</span>
                   </div>
                 )}
+
+                {/* Download / Export .txt File Button */}
+                <button
+                  id="btn-download-file-txt"
+                  onClick={handleDownloadFile}
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 hover:border-slate-600 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow"
+                  title="Export & Download active file as .txt"
+                >
+                  <Download className="h-3.5 w-3.5 text-indigo-400" />
+                  <span>Download .txt</span>
+                </button>
+
+                {/* GitHub Sync / Config Button */}
+                <button
+                  id="btn-open-github-modal"
+                  onClick={() => setShowGithubModal(true)}
+                  className={`px-3 py-1.5 border rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow ${
+                    githubToken
+                      ? 'bg-slate-900 hover:bg-slate-800 text-emerald-300 border-emerald-500/40'
+                      : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700/80'
+                  }`}
+                  title="Configure GitHub API Token & Sync settings"
+                >
+                  <Github className="h-3.5 w-3.5 text-slate-300" />
+                  {githubToken ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      GitHub Sync
+                    </span>
+                  ) : (
+                    <span>GitHub Config</span>
+                  )}
+                </button>
                 
                 {/* Save Alert Messages */}
                 {saveStatus.type && (
@@ -701,8 +934,26 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
                   <p className="text-[10px] text-slate-500 mt-0.5">Commit <span className="font-mono text-slate-400">{activeCommit.hash}</span> on {activeCommit.date}</p>
                 </div>
               </div>
-              <div className="text-[10px] font-mono bg-slate-950 border border-slate-800 px-2 py-1 rounded text-slate-400 shrink-0 self-start sm:self-center">
-                Latest Commit: <span className="text-indigo-400">{activeCommit.hash}</span>
+              <div className="flex items-center gap-2 shrink-0">
+                {githubToken && (
+                  <button
+                    id="btn-quick-github-commit"
+                    onClick={() => commitToGitHub()}
+                    disabled={githubSyncStatus.loading}
+                    className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded text-[11px] font-semibold flex items-center gap-1 transition-all"
+                    title="Commit & Push current file directly to GitHub"
+                  >
+                    {githubSyncStatus.loading ? (
+                      <RefreshCw className="h-3 w-3 animate-spin text-emerald-400" />
+                    ) : (
+                      <CloudUpload className="h-3 w-3 text-emerald-400" />
+                    )}
+                    Push to GitHub
+                  </button>
+                )}
+                <div className="text-[10px] font-mono bg-slate-950 border border-slate-800 px-2 py-1 rounded text-slate-400 shrink-0">
+                  Latest Commit: <span className="text-indigo-400">{activeCommit.hash}</span>
+                </div>
               </div>
             </div>
 
@@ -1389,6 +1640,224 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
                     Import {parsedIPList.filter(i => i.status === 'new').length} New IPs
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* GitHub Integration & Auto-Sync Modal */}
+      <AnimatePresence>
+        {showGithubModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/70 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-indigo-400">
+                    <Github className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                      GitHub Integration & Auto-Sync
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                        REST API Sync
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Sync repository blacklists directly with your remote GitHub repository
+                    </p>
+                  </div>
+                </div>
+                <button
+                  id="close-github-modal"
+                  onClick={() => setShowGithubModal(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 overflow-y-auto space-y-4 text-xs">
+                {/* Status Message if any */}
+                {githubSyncStatus.message && (
+                  <div className={`p-3 rounded-xl border flex flex-col gap-2 text-xs ${
+                    githubSyncStatus.type === 'success'
+                      ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+                      : githubSyncStatus.type === 'error'
+                      ? 'bg-red-950/40 border-red-500/40 text-red-300'
+                      : 'bg-indigo-950/40 border-indigo-500/40 text-indigo-300'
+                  }`}>
+                    <div className="flex items-center gap-2.5">
+                      {githubSyncStatus.loading ? (
+                        <RefreshCw className="h-4 w-4 animate-spin shrink-0" />
+                      ) : githubSyncStatus.type === 'success' ? (
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+                      ) : (
+                        <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+                      )}
+                      <span className="font-medium flex-1">{githubSyncStatus.message}</span>
+                    </div>
+
+                    {/* Troubleshooting advice for 403 / PAT permission error */}
+                    {githubSyncStatus.type === 'error' && (
+                      <div className="mt-1 pt-2 border-t border-red-500/20 text-[11px] text-red-200/90 space-y-1 bg-red-950/50 p-2.5 rounded-lg">
+                        <p className="font-bold text-red-300">Cara Memperbaiki Error Ini:</p>
+                        <ol className="list-decimal list-inside space-y-1 text-[10px] opacity-90">
+                          <li>Klik tombol <span className="font-semibold underline">"Generate PAT (Classic)"</span> di bawah.</li>
+                          <li>Pastikan centang checkbox <code className="bg-red-900/50 px-1 py-0.5 rounded text-white font-mono">repo</code> (Full control of private repositories).</li>
+                          <li>Jika memakai <i>Fine-grained token</i>, buka Settings -&gt; Developer Settings -&gt; Personal Access Tokens -&gt; Fine-grained tokens -&gt; Pilih Repo <code className="bg-red-900/50 px-1 py-0.5 rounded text-white font-mono">{githubRepo || 'neotechspotify/Web-Parsing-NCI'}</code> -&gt; Set <b>Repository permissions: Contents</b> menjadi <b>Read and write</b>.</li>
+                          <li>Salin token baru (<code className="font-mono">ghp_...</code> atau <code className="font-mono">github_pat_...</code>) dan tempel ke field di bawah.</li>
+                        </ol>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* PAT Input */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="font-semibold text-slate-300 flex items-center gap-1.5">
+                      GitHub Personal Access Token (PAT):
+                    </label>
+                    <a
+                      href="https://github.com/settings/tokens/new?scopes=repo&description=Web-Parsing-NCI-Sync"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1"
+                    >
+                      Generate PAT <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                  <input
+                    id="input-github-pat"
+                    type="password"
+                    value={githubToken}
+                    onChange={(e) => setGithubToken(e.target.value)}
+                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
+                  />
+                  <p className="text-[11px] text-slate-500">
+                    Token is stored locally in your browser. Needs <code className="text-slate-300 font-mono">repo</code> permissions.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Repo Name */}
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-slate-300">
+                      GitHub Repository (owner/repo):
+                    </label>
+                    <input
+                      id="input-github-repo"
+                      type="text"
+                      value={githubRepo}
+                      onChange={(e) => setGithubRepo(e.target.value)}
+                      placeholder="neotechspotify/Web-Parsing-NCI"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  {/* Branch */}
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-slate-300">
+                      Target Branch:
+                    </label>
+                    <input
+                      id="input-github-branch"
+                      type="text"
+                      value={githubBranch}
+                      onChange={(e) => setGithubBranch(e.target.value)}
+                      placeholder="main"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                {/* File Path */}
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-slate-300">
+                    File Path in GitHub Repo:
+                  </label>
+                  <input
+                    id="input-github-filepath"
+                    type="text"
+                    value={githubFilePath}
+                    onChange={(e) => setGithubFilePath(e.target.value)}
+                    placeholder="database/medika/blacklists/List-IP-Blacklist.txt"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
+                  />
+                  <p className="text-[11px] text-slate-500">
+                    Path where <span className="text-indigo-300 font-mono">{selectedFilename}</span> will be committed in your repository.
+                  </p>
+                </div>
+
+                {/* Auto-Commit Toggle */}
+                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <span className="font-bold text-slate-200 block">Auto-Sync to GitHub on Save / Import</span>
+                    <span className="text-[11px] text-slate-400 block">
+                      Automatically push commits to GitHub whenever you add, import Excel, or edit raw files in Web UI.
+                    </span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-4">
+                    <input
+                      id="toggle-github-autosync"
+                      type="checkbox"
+                      checked={githubAutoSync}
+                      onChange={(e) => setGithubAutoSync(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
+                </div>
+
+                {/* Direct Action Buttons */}
+                <div className="pt-2 grid grid-cols-2 gap-3">
+                  <button
+                    id="btn-manual-pull-github"
+                    onClick={pullFromGitHub}
+                    disabled={githubSyncStatus.loading || !githubToken}
+                    className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-slate-700"
+                  >
+                    <CloudDownload className="h-4 w-4 text-indigo-400" />
+                    Pull Latest from GitHub
+                  </button>
+
+                  <button
+                    id="btn-manual-push-github"
+                    onClick={() => commitToGitHub()}
+                    disabled={githubSyncStatus.loading || !githubToken}
+                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 shadow"
+                  >
+                    <CloudUpload className="h-4 w-4 text-white" />
+                    Commit & Push to GitHub Now
+                  </button>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/80 flex items-center justify-between shrink-0">
+                <span className="text-[11px] text-slate-400">
+                  {githubSyncStatus.lastSyncTime ? `Last sync at ${githubSyncStatus.lastSyncTime}` : 'Configured settings save automatically'}
+                </span>
+
+                <button
+                  id="btn-save-github-config"
+                  onClick={() => {
+                    saveGithubSettings(githubToken, githubRepo, githubBranch, githubFilePath, githubAutoSync);
+                    setShowGithubModal(false);
+                  }}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition-all shadow"
+                >
+                  Save & Close
+                </button>
               </div>
             </motion.div>
           </div>
