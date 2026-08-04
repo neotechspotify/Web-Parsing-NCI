@@ -1,0 +1,56 @@
+Dear Team KEMKES,
+
+Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
+
+===============================
+
+Sec. Event : {event_name}<br>
+Category : {severity}<br>
+Magnitude : {sev_magnitude}<br>
+Action : Closed<br>
+Waktu Deteksi : {tanggal} {waktu}<br>
+
+===============================
+
+Deskripsi Event :<br>
+Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada<br>
+
+Source IP :<br>
+{src_ip}	 
+
+Source Country :<br>
+{src_country} 
+
+Destination IP :<br>
+{dst_ip}
+
+Destination Port:<br>
+{dst_port} 
+
+Destination Country :<br>
+{dst_country}
+
+Query :<br>
+{query}
+
+URL/DNS :<br>
+{url}
+
+===============================
+
+Terdeteksi multiple port scans from a single source IP address, yang mengindikasikan bahwa satu alamat IP eksternal melakukan percobaan koneksi ke beberapa port pada host tujuan. Aktivitas port scanning merupakan teknik reconnaissance yang umum dilakukan penyerang untuk mengidentifikasi layanan yang tersedia sebelum melanjutkan ke tahap eksploitasi. Berdasarkan informasi yang tersedia, belum terdapat indikasi bahwa aktivitas tersebut berhasil mengeksploitasi layanan pada host tujuan.
+
+===============================
+
+Mitigasi :<br>
+- Verifikasi pada firewall dan sistem tujuan apakah terdapat aktivitas lanjutan dari alamat IP {src_ip}.
+- Lakukan pemeriksaan terhadap log host dan layanan yang berjalan pada {dst_ip} untuk memastikan tidak terdapat percobaan eksploitasi setelah proses scanning.
+- Pastikan hanya port dan layanan yang benar-benar diperlukan yang diekspos ke Internet.
+- Terapkan pembatasan akses menggunakan firewall, ACL, atau IP whitelist untuk layanan yang bersifat administratif maupun sensitif.
+- Apabila aktivitas scanning terjadi secara berulang dan tidak memiliki kebutuhan bisnis yang sah, pertimbangkan untuk melakukan pemblokiran terhadap alamat IP sumber sesuai kebijakan keamanan yang berlaku.
+- Lanjutkan monitoring terhadap aset tujuan untuk mendeteksi adanya indikasi eksploitasi atau koneksi mencurigakan setelah aktivitas reconnaissance.
+
+===============================
+
+Terimakasih,<br>
+SOC Neotech
