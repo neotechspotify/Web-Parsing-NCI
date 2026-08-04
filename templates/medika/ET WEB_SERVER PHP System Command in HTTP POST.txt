@@ -1,11 +1,13 @@
 Dear Team MEDIKA,
 
+Noted : IP source tersebut sudah kami block melalui EDL
+
 Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
 
 ===============================
 
 No Tiket : {ticket_id}
-Sec. Event : {event_type}
+Sec. Event : Web Application Attack
 Signature : {event_name}
 Log Source : Suricata
 Severity : {severity}
