@@ -1470,7 +1470,7 @@ function TemplatesTab({
 
   // GitHub Integration States (Shared with RepositoryTab via server /api/github-config & localStorage)
   const [githubToken, setGithubToken] = useState<string>(() => localStorage.getItem('github_pat') || '');
-  const [githubRepo, setGithubRepo] = useState<string>(() => localStorage.getItem('github_repo') || 'neotechspotify/Web-Parsing-NCI');
+  const [githubRepo, setGithubRepo] = useState<string>(() => localStorage.getItem('github_repo') || '');
   const [githubBranch, setGithubBranch] = useState<string>(() => localStorage.getItem('github_branch') || 'main');
   const [githubAutoSync, setGithubAutoSync] = useState<boolean>(() => localStorage.getItem('github_autosync') === 'true');
   const [showGithubModal, setShowGithubModal] = useState<boolean>(false);
