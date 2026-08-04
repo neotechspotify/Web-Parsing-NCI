@@ -187,24 +187,48 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
       try {
         const res = await fetch('/api/github-config');
         const data = await res.json();
+        const localPat = localStorage.getItem('github_pat') || '';
+        const localRepo = localStorage.getItem('github_repo') || '';
+        const localBranch = localStorage.getItem('github_branch') || '';
+        const localPath = localStorage.getItem('github_filepath') || '';
+
         if (data && data.success && data.config) {
           const cfg = data.config;
-          if (cfg.githubToken !== undefined) {
-            setGithubToken(cfg.githubToken);
-            localStorage.setItem('github_pat', cfg.githubToken);
+
+          // 1. Token logic
+          const finalToken = (cfg.githubToken && cfg.githubToken.trim()) ? cfg.githubToken : localPat;
+          if (finalToken) {
+            setGithubToken(finalToken);
+            localStorage.setItem('github_pat', finalToken);
+
+            if (!cfg.githubToken || !cfg.githubToken.trim()) {
+              fetch('/api/github-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ githubToken: finalToken })
+              }).catch(() => {});
+            }
           }
-          if (cfg.githubRepo) {
-            setGithubRepo(cfg.githubRepo);
-            localStorage.setItem('github_repo', cfg.githubRepo);
+
+          // 2. Repo logic
+          const finalRepo = cfg.githubRepo || localRepo;
+          if (finalRepo) {
+            setGithubRepo(finalRepo);
+            localStorage.setItem('github_repo', finalRepo);
           }
-          if (cfg.githubBranch) {
-            setGithubBranch(cfg.githubBranch);
-            localStorage.setItem('github_branch', cfg.githubBranch);
+
+          // 3. Branch logic
+          const finalBranch = cfg.githubBranch || localBranch || 'main';
+          setGithubBranch(finalBranch);
+          localStorage.setItem('github_branch', finalBranch);
+
+          // 4. File path logic
+          const finalPath = cfg.githubFilePath || localPath;
+          if (finalPath) {
+            setGithubFilePath(finalPath);
+            localStorage.setItem('github_filepath', finalPath);
           }
-          if (cfg.githubFilePath) {
-            setGithubFilePath(cfg.githubFilePath);
-            localStorage.setItem('github_filepath', cfg.githubFilePath);
-          }
+
           if (cfg.githubAutoSync !== undefined) {
             setGithubAutoSync(cfg.githubAutoSync);
             localStorage.setItem('github_autosync', cfg.githubAutoSync ? 'true' : 'false');

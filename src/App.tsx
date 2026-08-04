@@ -1575,30 +1575,53 @@ function TemplatesTab({
       try {
         const res = await fetch('/api/github-config');
         const data = await res.json();
+        const localPat = localStorage.getItem('github_pat') || '';
+        const localRepo = localStorage.getItem('github_repo') || '';
+        const localBranch = localStorage.getItem('github_branch') || '';
+
         if (data && data.success && data.config) {
           const cfg = data.config;
-          if (cfg.githubToken !== undefined) {
-            setGithubToken(cfg.githubToken);
-            setTempPat(cfg.githubToken);
-            localStorage.setItem('github_pat', cfg.githubToken);
+
+          // 1. Token logic: Prefer server token if non-empty; otherwise fallback to localPat if present
+          const finalToken = (cfg.githubToken && cfg.githubToken.trim()) ? cfg.githubToken : localPat;
+          if (finalToken) {
+            setGithubToken(finalToken);
+            setTempPat(finalToken);
+            localStorage.setItem('github_pat', finalToken);
+
+            // Sync to server if server token was empty
+            if (!cfg.githubToken || !cfg.githubToken.trim()) {
+              fetch('/api/github-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ githubToken: finalToken })
+              }).catch(() => {});
+            }
           }
-          if (cfg.githubRepo) {
-            setGithubRepo(cfg.githubRepo);
-            setTempRepo(cfg.githubRepo);
-            localStorage.setItem('github_repo', cfg.githubRepo);
+
+          // 2. Repo logic
+          const finalRepo = cfg.githubRepo || localRepo;
+          if (finalRepo) {
+            setGithubRepo(finalRepo);
+            setTempRepo(finalRepo);
+            localStorage.setItem('github_repo', finalRepo);
           }
-          if (cfg.githubBranch) {
-            setGithubBranch(cfg.githubBranch);
-            setTempBranch(cfg.githubBranch);
-            localStorage.setItem('github_branch', cfg.githubBranch);
-          }
+
+          // 3. Branch logic
+          const finalBranch = cfg.githubBranch || localBranch || 'main';
+          setGithubBranch(finalBranch);
+          setTempBranch(finalBranch);
+          localStorage.setItem('github_branch', finalBranch);
+
+          // 4. AutoSync logic
           if (cfg.githubAutoSync !== undefined) {
             setGithubAutoSync(cfg.githubAutoSync);
             setTempAutoSync(cfg.githubAutoSync);
             localStorage.setItem('github_autosync', cfg.githubAutoSync ? 'true' : 'false');
           }
+
           // Auto pull templates from GitHub if token is set
-          if (cfg.githubToken && cfg.githubToken.trim()) {
+          if (finalToken && finalToken.trim()) {
             await syncPullFromGitHub(false);
           }
         }

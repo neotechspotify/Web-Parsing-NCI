@@ -1700,7 +1700,7 @@ app.get('/api/github-config', (req, res) => {
   try {
     const configPath = path.join(getDatabaseDir(), 'github.config.json');
     let config = {
-      githubToken: '',
+      githubToken: process.env.GITHUB_PAT || process.env.GITHUB_TOKEN || '',
       githubRepo: 'neotechspotify/Web-Parsing-NCI',
       githubBranch: 'main',
       githubFilePath: 'database/medika/blacklists/List-IP-Blacklist.txt',
@@ -1713,6 +1713,9 @@ app.get('/api/github-config', (req, res) => {
       try {
         const parsed = JSON.parse(fileData);
         config = { ...config, ...parsed };
+        if (!config.githubToken) {
+          config.githubToken = process.env.GITHUB_PAT || process.env.GITHUB_TOKEN || '';
+        }
       } catch (parseErr) {
         console.error('Error parsing github.config.json:', parseErr);
       }
