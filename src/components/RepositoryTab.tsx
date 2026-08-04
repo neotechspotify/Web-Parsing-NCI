@@ -226,33 +226,8 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
     URL.revokeObjectURL(url);
   };
 
-  // Fetch global GitHub config from server on mount
-  useEffect(() => {
-    fetch('/api/github-config')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && data.pat) {
-          setGithubToken(data.pat);
-          localStorage.setItem('github_pat', data.pat);
-        }
-        if (data?.repo) {
-          setGithubRepo(data.repo);
-          localStorage.setItem('github_repo', data.repo);
-        }
-        if (data?.branch) {
-          setGithubBranch(data.branch);
-          localStorage.setItem('github_branch', data.branch);
-        }
-        if (data?.autoSync !== undefined) {
-          setGithubAutoSync(Boolean(data.autoSync));
-          localStorage.setItem('github_autosync', data.autoSync ? 'true' : 'false');
-        }
-      })
-      .catch((err) => console.error('Error loading github config in RepositoryTab:', err));
-  }, []);
-
   // Save GitHub Config
-  const saveGithubSettings = async (pat: string, repo: string, branch: string, path: string, autoSync: boolean) => {
+  const saveGithubSettings = (pat: string, repo: string, branch: string, path: string, autoSync: boolean) => {
     setGithubToken(pat);
     setGithubRepo(repo);
     setGithubBranch(branch);
@@ -264,21 +239,6 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
     localStorage.setItem('github_branch', branch);
     localStorage.setItem('github_filepath', path);
     localStorage.setItem('github_autosync', autoSync ? 'true' : 'false');
-
-    try {
-      await fetch('/api/github-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pat,
-          repo,
-          branch,
-          autoSync
-        })
-      });
-    } catch (err) {
-      console.error('Failed to save github-config to server:', err);
-    }
   };
 
   // Commit & Push File directly to GitHub REST API
