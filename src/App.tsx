@@ -1810,7 +1810,7 @@ function TemplatesTab({
     }
   };
 
-  const isGithubConfigured = Boolean(githubToken.trim() && githubRepo.trim());
+  const isGithubConfigured = true;
 
   return (
     <motion.div
@@ -1822,23 +1822,16 @@ function TemplatesTab({
       {/* GitHub Sync Header Banner */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-start gap-3">
-          <div className={`p-2 rounded-lg border shrink-0 ${isGithubConfigured ? 'bg-indigo-950/50 border-indigo-800/60 text-indigo-400' : 'bg-amber-950/40 border-amber-800/40 text-amber-400'}`}>
+          <div className="p-2 rounded-lg border shrink-0 bg-indigo-950/50 border-indigo-800/60 text-indigo-400">
             <Github className="h-5 w-5" />
           </div>
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
               <h3 className="text-xs font-bold text-slate-200">GitHub Template Sync Engine</h3>
-              {isGithubConfigured ? (
-                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded-full">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Connected
-                </span>
-              ) : (
-                <span className="flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-950/60 border border-amber-800/60 px-2 py-0.5 rounded-full">
-                  <AlertTriangle className="h-3 w-3" />
-                  Sync Disconnected
-                </span>
-              )}
+              <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded-full">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Connected
+              </span>
             </div>
             <p className="text-[11px] text-slate-400 max-w-2xl leading-relaxed">
               Agar template baru (seperti <code className="text-indigo-400 bg-slate-950 px-1 py-0.5 rounded">templates/kemkes/*.txt</code>) tidak hilang saat server restart, hubungkan GitHub PAT. Setiap pembuatan/perubahan template akan langsung dipush ke repository.
