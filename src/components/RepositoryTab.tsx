@@ -181,6 +181,42 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
     message: ''
   });
 
+  // Fetch central GitHub configuration from server (/api/github-config)
+  useEffect(() => {
+    const fetchCentralGithubConfig = async () => {
+      try {
+        const res = await fetch('/api/github-config');
+        const data = await res.json();
+        if (data && data.success && data.config) {
+          const cfg = data.config;
+          if (cfg.githubToken !== undefined) {
+            setGithubToken(cfg.githubToken);
+            localStorage.setItem('github_pat', cfg.githubToken);
+          }
+          if (cfg.githubRepo) {
+            setGithubRepo(cfg.githubRepo);
+            localStorage.setItem('github_repo', cfg.githubRepo);
+          }
+          if (cfg.githubBranch) {
+            setGithubBranch(cfg.githubBranch);
+            localStorage.setItem('github_branch', cfg.githubBranch);
+          }
+          if (cfg.githubFilePath) {
+            setGithubFilePath(cfg.githubFilePath);
+            localStorage.setItem('github_filepath', cfg.githubFilePath);
+          }
+          if (cfg.githubAutoSync !== undefined) {
+            setGithubAutoSync(cfg.githubAutoSync);
+            localStorage.setItem('github_autosync', cfg.githubAutoSync ? 'true' : 'false');
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch central github config in RepositoryTab:', err);
+      }
+    };
+    fetchCentralGithubConfig();
+  }, []);
+
   // Admin Privacy Mode States (Lock GitHub Push / Sync / Download for regular users)
   const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => localStorage.getItem('repo_admin_unlocked') === 'true');
   const [showAdminPinModal, setShowAdminPinModal] = useState<boolean>(false);
@@ -227,7 +263,7 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
   };
 
   // Save GitHub Config
-  const saveGithubSettings = (pat: string, repo: string, branch: string, path: string, autoSync: boolean) => {
+  const saveGithubSettings = async (pat: string, repo: string, branch: string, path: string, autoSync: boolean) => {
     setGithubToken(pat);
     setGithubRepo(repo);
     setGithubBranch(branch);
@@ -239,6 +275,22 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
     localStorage.setItem('github_branch', branch);
     localStorage.setItem('github_filepath', path);
     localStorage.setItem('github_autosync', autoSync ? 'true' : 'false');
+
+    try {
+      await fetch('/api/github-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          githubToken: pat,
+          githubRepo: repo,
+          githubBranch: branch,
+          githubFilePath: path,
+          githubAutoSync: autoSync
+        })
+      });
+    } catch (err) {
+      console.error('Failed to save central github config from RepositoryTab:', err);
+    }
   };
 
   // Commit & Push File directly to GitHub REST API

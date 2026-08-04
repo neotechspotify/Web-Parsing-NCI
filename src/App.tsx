@@ -1463,7 +1463,7 @@ function TemplatesTab({
   const [creating, setCreating] = useState(false);
   const [formMessage, setFormMessage] = useState<{ success: boolean; text: string } | null>(null);
 
-  // GitHub Integration States (Shared with RepositoryTab via localStorage)
+  // GitHub Integration States (Shared with RepositoryTab via server /api/github-config & localStorage)
   const [githubToken, setGithubToken] = useState<string>(() => localStorage.getItem('github_pat') || '');
   const [githubRepo, setGithubRepo] = useState<string>(() => localStorage.getItem('github_repo') || '');
   const [githubBranch, setGithubBranch] = useState<string>(() => localStorage.getItem('github_branch') || 'main');
@@ -1481,7 +1481,43 @@ function TemplatesTab({
   const [tempBranch, setTempBranch] = useState(githubBranch);
   const [tempAutoSync, setTempAutoSync] = useState(githubAutoSync);
 
-  const saveGithubSettings = (e: React.FormEvent) => {
+  // Auto load central GitHub configuration from server (/api/github-config) on mount
+  useEffect(() => {
+    const loadCentralGithubConfig = async () => {
+      try {
+        const res = await fetch('/api/github-config');
+        const data = await res.json();
+        if (data && data.success && data.config) {
+          const cfg = data.config;
+          if (cfg.githubToken !== undefined) {
+            setGithubToken(cfg.githubToken);
+            setTempPat(cfg.githubToken);
+            localStorage.setItem('github_pat', cfg.githubToken);
+          }
+          if (cfg.githubRepo) {
+            setGithubRepo(cfg.githubRepo);
+            setTempRepo(cfg.githubRepo);
+            localStorage.setItem('github_repo', cfg.githubRepo);
+          }
+          if (cfg.githubBranch) {
+            setGithubBranch(cfg.githubBranch);
+            setTempBranch(cfg.githubBranch);
+            localStorage.setItem('github_branch', cfg.githubBranch);
+          }
+          if (cfg.githubAutoSync !== undefined) {
+            setGithubAutoSync(cfg.githubAutoSync);
+            setTempAutoSync(cfg.githubAutoSync);
+            localStorage.setItem('github_autosync', cfg.githubAutoSync ? 'true' : 'false');
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch central github config:', err);
+      }
+    };
+    loadCentralGithubConfig();
+  }, []);
+
+  const saveGithubSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setGithubToken(tempPat);
     setGithubRepo(tempRepo);
@@ -1493,11 +1529,31 @@ function TemplatesTab({
     localStorage.setItem('github_branch', tempBranch);
     localStorage.setItem('github_autosync', tempAutoSync ? 'true' : 'false');
     setShowGithubModal(false);
-    setGithubSyncStatus({
-      loading: false,
-      type: 'success',
-      message: 'Konfigurasi GitHub Sync berhasil disimpan!'
-    });
+
+    try {
+      await fetch('/api/github-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          githubToken: tempPat,
+          githubRepo: tempRepo,
+          githubBranch: tempBranch,
+          githubAutoSync: tempAutoSync
+        })
+      });
+      setGithubSyncStatus({
+        loading: false,
+        type: 'success',
+        message: 'Konfigurasi GitHub Sync berhasil disimpan secara terpusat di server!'
+      });
+    } catch (err) {
+      console.error('Failed to save github config to server:', err);
+      setGithubSyncStatus({
+        loading: false,
+        type: 'success',
+        message: 'Konfigurasi tersimpan lokal.'
+      });
+    }
   };
 
   const list = templates[selectedInstansi] || [];

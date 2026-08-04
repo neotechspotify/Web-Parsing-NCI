@@ -1696,6 +1696,79 @@ function getTemplateFilePath(instansi: string, name: string): string {
 }
 
 // API Routes
+app.get('/api/github-config', (req, res) => {
+  try {
+    const configPath = path.join(getDatabaseDir(), 'github.config.json');
+    let config = {
+      githubToken: '',
+      githubRepo: 'neotechspotify/Web-Parsing-NCI',
+      githubBranch: 'main',
+      githubFilePath: 'database/medika/blacklists/List-IP-Blacklist.txt',
+      githubAutoSync: true,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (fs.existsSync(configPath)) {
+      const fileData = fs.readFileSync(configPath, 'utf-8');
+      try {
+        const parsed = JSON.parse(fileData);
+        config = { ...config, ...parsed };
+      } catch (parseErr) {
+        console.error('Error parsing github.config.json:', parseErr);
+      }
+    } else {
+      fs.mkdirSync(getDatabaseDir(), { recursive: true });
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+    }
+
+    res.json({ success: true, config });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/github-config', (req, res) => {
+  try {
+    const configPath = path.join(getDatabaseDir(), 'github.config.json');
+    let existingConfig = {
+      githubToken: '',
+      githubRepo: 'neotechspotify/Web-Parsing-NCI',
+      githubBranch: 'main',
+      githubFilePath: 'database/medika/blacklists/List-IP-Blacklist.txt',
+      githubAutoSync: true,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (fs.existsSync(configPath)) {
+      try {
+        const fileData = fs.readFileSync(configPath, 'utf-8');
+        existingConfig = { ...existingConfig, ...JSON.parse(fileData) };
+      } catch (e) {}
+    }
+
+    const { githubToken, pat, githubRepo, repo, githubBranch, branch, githubFilePath, filepath, githubAutoSync, autoSync } = req.body;
+
+    const newConfig = {
+      githubToken: githubToken !== undefined ? githubToken : (pat !== undefined ? pat : existingConfig.githubToken),
+      githubRepo: githubRepo !== undefined ? githubRepo : (repo !== undefined ? repo : existingConfig.githubRepo),
+      githubBranch: githubBranch !== undefined ? githubBranch : (branch !== undefined ? branch : existingConfig.githubBranch),
+      githubFilePath: githubFilePath !== undefined ? githubFilePath : (filepath !== undefined ? filepath : existingConfig.githubFilePath),
+      githubAutoSync: githubAutoSync !== undefined ? githubAutoSync : (autoSync !== undefined ? autoSync : existingConfig.githubAutoSync),
+      updatedAt: new Date().toISOString()
+    };
+
+    fs.mkdirSync(getDatabaseDir(), { recursive: true });
+    fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 2), 'utf-8');
+
+    res.json({
+      success: true,
+      message: 'Konfigurasi GitHub terpusat berhasil diperbarui di server!',
+      config: newConfig
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 app.get('/api/templates', (req, res) => {
   try {
     const baseDir = getTemplatesDir();
