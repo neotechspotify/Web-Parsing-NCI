@@ -1756,22 +1756,162 @@ app.get('/api/templates/:instansi/:name', (req, res) => {
   }
 });
 
-app.post('/api/templates/:instansi/:name', (req, res) => {
+// --- GITHUB GLOBAL CONFIG & SERVER AUTO-SYNC HELPERS ---
+const GITHUB_CONFIG_FILE = path.join(process.cwd(), 'database', 'github-config.json');
+
+async function commitToGitHubServer(instansi: string, filename: string, content: string, customMsg?: string, passedPat?: string, passedRepo?: string, passedBranch?: string) {
+  try {
+    let pat = (passedPat || '').trim() || process.env.GITHUB_PAT || '';
+    let repo = (passedRepo || '').trim() || process.env.GITHUB_REPO || 'neotechspotify/Web-Parsing-NCI';
+    let branch = (passedBranch || '').trim() || process.env.GITHUB_BRANCH || 'main';
+
+    if (!pat && fs.existsSync(GITHUB_CONFIG_FILE)) {
+      try {
+        const conf = JSON.parse(fs.readFileSync(GITHUB_CONFIG_FILE, 'utf-8'));
+        if (conf.pat) pat = conf.pat;
+        if (conf.repo) repo = conf.repo;
+        if (conf.branch) branch = conf.branch;
+      } catch (e) {}
+    }
+
+    if (!pat) {
+      console.log('GitHub PAT not available on server for auto-commit.');
+      return false;
+    }
+
+    const cleanRepo = repo.replace('https://github.com/', '').replace('.git', '').trim();
+    const cleanName = filename.endsWith('.txt') ? filename : `${filename}.txt`;
+    const targetPath = instansi === 'database' ? `database/${filename}` : `templates/${instansi.toLowerCase()}/${cleanName}`;
+
+    let existingSha = '';
+    const getRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${branch}`, {
+      headers: {
+        'Authorization': `Bearer ${pat}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Web-Parsing-NCI'
+      }
+    });
+
+    if (getRes.ok) {
+      const getData: any = await getRes.json();
+      existingSha = getData.sha;
+    }
+
+    const base64Content = Buffer.from(content, 'utf-8').toString('base64');
+
+    const putRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${pat}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'Web-Parsing-NCI'
+      },
+      body: JSON.stringify({
+        message: customMsg || `feat(template): sync ${targetPath} via Server`,
+        content: base64Content,
+        branch: branch,
+        ...(existingSha ? { sha: existingSha } : {})
+      })
+    });
+
+    if (putRes.ok) {
+      console.log(`Successfully synced ${targetPath} to GitHub via server!`);
+      return true;
+    } else {
+      const errData = await putRes.json();
+      console.error('Failed to sync to GitHub via server:', errData);
+      return false;
+    }
+  } catch (err) {
+    console.error('Error syncing to GitHub via server:', err);
+    return false;
+  }
+}
+
+async function deleteFromGitHubServer(instansi: string, filename: string, passedPat?: string, passedRepo?: string, passedBranch?: string) {
+  try {
+    let pat = (passedPat || '').trim() || process.env.GITHUB_PAT || '';
+    let repo = (passedRepo || '').trim() || process.env.GITHUB_REPO || 'neotechspotify/Web-Parsing-NCI';
+    let branch = (passedBranch || '').trim() || process.env.GITHUB_BRANCH || 'main';
+
+    if (!pat && fs.existsSync(GITHUB_CONFIG_FILE)) {
+      try {
+        const conf = JSON.parse(fs.readFileSync(GITHUB_CONFIG_FILE, 'utf-8'));
+        if (conf.pat) pat = conf.pat;
+        if (conf.repo) repo = conf.repo;
+        if (conf.branch) branch = conf.branch;
+      } catch (e) {}
+    }
+
+    if (!pat) return false;
+
+    const cleanRepo = repo.replace('https://github.com/', '').replace('.git', '').trim();
+    const cleanName = filename.endsWith('.txt') ? filename : `${filename}.txt`;
+    const targetPath = `templates/${instansi.toLowerCase()}/${cleanName}`;
+
+    const getRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${branch}`, {
+      headers: {
+        'Authorization': `Bearer ${pat}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Web-Parsing-NCI'
+      }
+    });
+
+    if (getRes.ok) {
+      const getData: any = await getRes.json();
+      const sha = getData.sha;
+
+      await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${pat}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'Web-Parsing-NCI'
+        },
+        body: JSON.stringify({
+          message: `fix(template): delete ${targetPath} via Server`,
+          sha: sha,
+          branch: branch
+        })
+      });
+      return true;
+    }
+  } catch (err) {
+    console.error('Error deleting from GitHub via server:', err);
+  }
+  return false;
+}
+
+app.post('/api/templates/:instansi/:name', async (req, res) => {
   const { instansi, name } = req.params;
-  const { content } = req.body;
+  const { content, githubToken, githubRepo, githubBranch } = req.body;
   const filePath = getTemplateFilePath(instansi, name);
 
   try {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, content.trim() + '\n', 'utf-8');
-    res.json({ success: true, message: `Template ${name} saved successfully!` });
+
+    const synced = await commitToGitHubServer(
+      instansi,
+      name,
+      content.trim() + '\n',
+      `feat(template): update template ${instansi}/${name}`,
+      githubToken,
+      githubRepo,
+      githubBranch
+    );
+
+    res.json({ success: true, message: `Template ${name} saved successfully!`, synced });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.delete('/api/templates/:instansi/:name', (req, res) => {
+app.delete('/api/templates/:instansi/:name', async (req, res) => {
   const { instansi, name } = req.params;
+  const { githubToken, githubRepo, githubBranch } = req.body || {};
   const filePath = getTemplateFilePath(instansi, name);
 
   if (!fs.existsSync(filePath)) {
@@ -1780,14 +1920,21 @@ app.delete('/api/templates/:instansi/:name', (req, res) => {
 
   try {
     fs.unlinkSync(filePath);
-    res.json({ success: true, message: `Template ${name} deleted successfully!` });
+    const synced = await deleteFromGitHubServer(
+      instansi,
+      name,
+      githubToken,
+      githubRepo,
+      githubBranch
+    );
+    res.json({ success: true, message: `Template ${name} deleted successfully!`, synced });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/templates/create', (req, res) => {
-  const { instansi, filename, deskripsi, mitigasi } = req.body;
+app.post('/api/templates/create', async (req, res) => {
+  const { instansi, filename, deskripsi, mitigasi, githubToken, githubRepo, githubBranch } = req.body;
 
   if (!instansi || !filename) {
     return res.status(400).json({ error: 'Instansi and filename are required' });
@@ -1810,11 +1957,24 @@ app.post('/api/templates/create', (req, res) => {
     content = content.replace(/{reputasi}/g, req.body.reputasi || '-');
 
     fs.writeFileSync(targetTemplatePath, content, 'utf-8');
+
+    // Auto-commit to GitHub via server
+    const synced = await commitToGitHubServer(
+      instansi,
+      cleanFilename,
+      content,
+      `feat(template): add new template ${instansi}/${cleanFilename}`,
+      githubToken,
+      githubRepo,
+      githubBranch
+    );
+
     res.json({
       success: true,
-      message: `Template saved successfully as ${instansi}/${cleanFilename}`,
+      message: `Template saved successfully as ${instansi}/${cleanFilename}${synced ? ' & synced to GitHub' : ''}`,
       cleanFilename,
-      content
+      content,
+      synced
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1822,8 +1982,6 @@ app.post('/api/templates/create', (req, res) => {
 });
 
 // --- GITHUB GLOBAL CONFIG ENDPOINTS ---
-const GITHUB_CONFIG_FILE = path.join(process.cwd(), 'database', 'github-config.json');
-
 app.get('/api/github-config', (req, res) => {
   try {
     if (fs.existsSync(GITHUB_CONFIG_FILE)) {
@@ -1841,7 +1999,7 @@ app.get('/api/github-config', (req, res) => {
   }
 });
 
-app.post('/api/github-config', (req, res) => {
+app.post('/api/github-config', async (req, res) => {
   try {
     const { pat, repo, branch, autoSync } = req.body;
     const configData = {
@@ -1853,6 +2011,12 @@ app.post('/api/github-config', (req, res) => {
     };
     fs.mkdirSync(path.dirname(GITHUB_CONFIG_FILE), { recursive: true });
     fs.writeFileSync(GITHUB_CONFIG_FILE, JSON.stringify(configData, null, 2), 'utf-8');
+
+    if (pat) {
+      commitToGitHubServer('database', 'github-config.json', JSON.stringify(configData, null, 2), 'chore: sync github config', pat, repo, branch)
+        .catch(e => console.error('Error syncing config to github:', e));
+    }
+
     res.json({ success: true, message: 'Server GitHub config updated!', config: configData });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

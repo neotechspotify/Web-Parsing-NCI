@@ -1715,10 +1715,19 @@ function TemplatesTab({
     if (!activeTemplate) return;
     setSaving(true);
     try {
+      const effectivePat = githubToken || localStorage.getItem('github_pat') || '';
+      const effectiveRepo = githubRepo || localStorage.getItem('github_repo') || 'neotechspotify/Web-Parsing-NCI';
+      const effectiveBranch = githubBranch || localStorage.getItem('github_branch') || 'main';
+
       const res = await fetch(`/api/templates/${encodeURIComponent(activeTemplate.instansi)}/${encodeURIComponent(activeTemplate.name)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: editedContent }),
+        body: JSON.stringify({
+          content: editedContent,
+          githubToken: effectivePat,
+          githubRepo: effectiveRepo,
+          githubBranch: effectiveBranch,
+        }),
       });
       const data = await res.json();
       if (data.success) {
@@ -1726,8 +1735,6 @@ function TemplatesTab({
         setEditing(false);
 
         // Auto Sync or Push to GitHub if credentials set
-        const effectivePat = githubToken || localStorage.getItem('github_pat') || '';
-        const effectiveRepo = githubRepo || localStorage.getItem('github_repo') || 'neotechspotify/Web-Parsing-NCI';
         if (effectivePat && effectiveRepo) {
           await commitTemplateToGitHub(activeTemplate.instansi, activeTemplate.name, editedContent);
         }
@@ -1742,13 +1749,21 @@ function TemplatesTab({
   const handleDeleteTemplate = async () => {
     if (!activeTemplate) return;
     try {
+      const effectivePat = githubToken || localStorage.getItem('github_pat') || '';
+      const effectiveRepo = githubRepo || localStorage.getItem('github_repo') || 'neotechspotify/Web-Parsing-NCI';
+      const effectiveBranch = githubBranch || localStorage.getItem('github_branch') || 'main';
+
       const res = await fetch(`/api/templates/${encodeURIComponent(activeTemplate.instansi)}/${encodeURIComponent(activeTemplate.name)}`, {
         method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          githubToken: effectivePat,
+          githubRepo: effectiveRepo,
+          githubBranch: effectiveBranch,
+        }),
       });
       const data = await res.json();
       if (data.success) {
-        const effectivePat = githubToken || localStorage.getItem('github_pat') || '';
-        const effectiveRepo = githubRepo || localStorage.getItem('github_repo') || 'neotechspotify/Web-Parsing-NCI';
         if (effectivePat && effectiveRepo) {
           await deleteTemplateFromGitHub(activeTemplate.instansi, activeTemplate.name);
         }
@@ -1766,6 +1781,10 @@ function TemplatesTab({
     setCreating(true);
     setFormMessage(null);
     try {
+      const effectivePat = githubToken || localStorage.getItem('github_pat') || '';
+      const effectiveRepo = githubRepo || localStorage.getItem('github_repo') || 'neotechspotify/Web-Parsing-NCI';
+      const effectiveBranch = githubBranch || localStorage.getItem('github_branch') || 'main';
+
       const res = await fetch('/api/templates/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1776,14 +1795,15 @@ function TemplatesTab({
           mitigasi: newMitigasi,
           analisa_awal: newAnalisaAwal,
           reputasi: newReputasi,
+          githubToken: effectivePat,
+          githubRepo: effectiveRepo,
+          githubBranch: effectiveBranch,
         }),
       });
       const data = await res.json();
       if (data.success) {
         let textMsg = data.message;
         // Auto commit to GitHub if Token & Repo are configured
-        const effectivePat = githubToken || localStorage.getItem('github_pat') || '';
-        const effectiveRepo = githubRepo || localStorage.getItem('github_repo') || 'neotechspotify/Web-Parsing-NCI';
         if (effectivePat && effectiveRepo) {
           const synced = await commitTemplateToGitHub(
             newInstansi,
@@ -1791,7 +1811,7 @@ function TemplatesTab({
             data.content || '',
             `feat(template): add new template ${newInstansi}/${data.cleanFilename || newFilename}`
           );
-          if (synced) {
+          if (synced && !textMsg.includes('synced to GitHub')) {
             textMsg += ' & tersync langsung ke GitHub!';
           }
         }
