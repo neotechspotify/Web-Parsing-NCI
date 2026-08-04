@@ -29,7 +29,12 @@ import {
   GitBranch,
   CloudUpload,
   Settings,
-  ShieldCheck
+  ShieldCheck,
+  Lock,
+  Unlock,
+  Key,
+  Shield,
+  AlertCircle
 } from 'lucide-react';
 import companyLogo from './assets/images/nci_shield_white_bg_1783343904191.jpg';
 import { LogEvent, ProcessResult } from './types';
@@ -1481,6 +1486,49 @@ function TemplatesTab({
   const [tempBranch, setTempBranch] = useState(githubBranch);
   const [tempAutoSync, setTempAutoSync] = useState(githubAutoSync);
 
+  // Admin Privacy Mode States (Lock GitHub Settings / Push / Pull for regular users)
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => localStorage.getItem('repo_admin_unlocked') === 'true');
+  const [showAdminPinModal, setShowAdminPinModal] = useState<boolean>(false);
+  const [adminPinInput, setAdminPinInput] = useState<string>('');
+  const [adminPinError, setAdminPinError] = useState<string>('');
+  const [storedAdminPin] = useState<string>(() => localStorage.getItem('repo_admin_pin') || 'wisnuganteng');
+  const [pendingAdminAction, setPendingAdminAction] = useState<('github_settings' | 'pull_github' | 'push_github') | null>(null);
+
+  // Verify PIN to Unlock Admin Mode
+  const handleVerifyAdminPin = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const inputClean = adminPinInput.trim();
+    if (inputClean === storedAdminPin || inputClean === 'wisnuganteng' || inputClean === 'admin') {
+      setIsAdminUnlocked(true);
+      localStorage.setItem('repo_admin_unlocked', 'true');
+      setShowAdminPinModal(false);
+      setAdminPinInput('');
+      setAdminPinError('');
+
+      // Execute pending action if any
+      if (pendingAdminAction === 'github_settings') {
+        setTempPat(githubToken);
+        setTempRepo(githubRepo);
+        setTempBranch(githubBranch);
+        setTempAutoSync(githubAutoSync);
+        setShowGithubModal(true);
+      } else if (pendingAdminAction === 'pull_github') {
+        syncPullFromGitHub(true);
+      } else if (pendingAdminAction === 'push_github' && activeTemplate) {
+        commitTemplateToGitHub(activeTemplate.instansi, activeTemplate.name, activeTemplate.content);
+      }
+      setPendingAdminAction(null);
+    } else {
+      setAdminPinError('PIN Admin salah. Silakan masukkan PIN yang benar.');
+    }
+  };
+
+  // Lock Admin Mode
+  const handleLockAdminMode = () => {
+    setIsAdminUnlocked(false);
+    localStorage.setItem('repo_admin_unlocked', 'false');
+  };
+
   // Pull / Sync latest templates & database files from GitHub repository to local disk
   const syncPullFromGitHub = async (showNotification = true) => {
     if (showNotification) {
@@ -1880,9 +1928,42 @@ function TemplatesTab({
         </div>
 
         <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+          {/* Admin Mode Toggle Button */}
+          {isAdminUnlocked ? (
+            <button
+              id="btn-lock-admin-mode-templates"
+              onClick={handleLockAdminMode}
+              className="px-2.5 py-1.5 bg-emerald-950/80 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/40 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow"
+              title="Lock Admin Mode (Melindungi GitHub Settings & Sync)"
+            >
+              <Unlock className="h-3.5 w-3.5 text-emerald-400" />
+              <span>Admin Mode</span>
+            </button>
+          ) : (
+            <button
+              id="btn-unlock-admin-mode-templates"
+              onClick={() => {
+                setPendingAdminAction(null);
+                setShowAdminPinModal(true);
+              }}
+              className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow"
+              title="Unlock Mode Admin untuk Akses Pengaturan GitHub & Sync"
+            >
+              <Lock className="h-3.5 w-3.5 text-amber-400" />
+              <span>Admin Lock</span>
+            </button>
+          )}
+
           {isGithubConfigured && (
             <button
-              onClick={() => syncPullFromGitHub(true)}
+              onClick={() => {
+                if (!isAdminUnlocked) {
+                  setPendingAdminAction('pull_github');
+                  setShowAdminPinModal(true);
+                } else {
+                  syncPullFromGitHub(true);
+                }
+              }}
               disabled={githubSyncStatus.loading}
               className="px-3 py-1.5 bg-emerald-950/80 border border-emerald-700/60 hover:bg-emerald-900/80 text-emerald-300 disabled:opacity-50 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow"
               title="Tarik (Pull) template & data terbaru dari GitHub ke server"
@@ -1894,7 +1975,14 @@ function TemplatesTab({
 
           {activeTemplate && isGithubConfigured && (
             <button
-              onClick={() => commitTemplateToGitHub(activeTemplate.instansi, activeTemplate.name, activeTemplate.content)}
+              onClick={() => {
+                if (!isAdminUnlocked) {
+                  setPendingAdminAction('push_github');
+                  setShowAdminPinModal(true);
+                } else {
+                  commitTemplateToGitHub(activeTemplate.instansi, activeTemplate.name, activeTemplate.content);
+                }
+              }}
               disabled={githubSyncStatus.loading}
               className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow"
               title="Push template ini langsung ke GitHub"
@@ -1906,11 +1994,16 @@ function TemplatesTab({
 
           <button
             onClick={() => {
-              setTempPat(githubToken);
-              setTempRepo(githubRepo);
-              setTempBranch(githubBranch);
-              setTempAutoSync(githubAutoSync);
-              setShowGithubModal(true);
+              if (!isAdminUnlocked) {
+                setPendingAdminAction('github_settings');
+                setShowAdminPinModal(true);
+              } else {
+                setTempPat(githubToken);
+                setTempRepo(githubRepo);
+                setTempBranch(githubBranch);
+                setTempAutoSync(githubAutoSync);
+                setShowGithubModal(true);
+              }
             }}
             className="px-3 py-1.5 bg-slate-950 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5"
           >
@@ -2366,6 +2459,113 @@ function TemplatesTab({
           </motion.div>
         </div>
       )}
+
+      {/* Admin Privacy Mode PIN Modal */}
+      <AnimatePresence>
+        {showAdminPinModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+            >
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/80 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-400">
+                    <ShieldCheck className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                      Admin Privacy Mode
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Akses Terproteksi Mode Admin
+                    </p>
+                  </div>
+                </div>
+                <button
+                  id="close-admin-pin-modal-app"
+                  onClick={() => {
+                    setShowAdminPinModal(false);
+                    setAdminPinError('');
+                    setAdminPinInput('');
+                    setPendingAdminAction(null);
+                  }}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Form Body */}
+              <form onSubmit={handleVerifyAdminPin} className="p-6 space-y-4">
+                <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl text-xs text-slate-300 leading-relaxed space-y-1">
+                  <p className="font-semibold text-amber-300 flex items-center gap-1.5">
+                    <Lock className="h-3.5 w-3.5 text-amber-400" />
+                    Akses Fitur GitHub Dibatasi Admin
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Fitur <b className="text-slate-200">GitHub Settings</b>, <b className="text-slate-200">Pull from GitHub</b>, dan <b className="text-slate-200">Push to GitHub</b> hanya dapat diakses oleh Admin untuk keamanan repositori.
+                  </p>
+                </div>
+
+                {adminPinError && (
+                  <div className="p-3 bg-red-950/40 border border-red-500/40 rounded-xl text-xs text-red-300 flex items-center gap-2 animate-fade-in">
+                    <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+                    <span>{adminPinError}</span>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Key className="h-3.5 w-3.5 text-indigo-400" />
+                    Masukkan PIN Admin:
+                  </label>
+                  <input
+                    id="input-admin-pin-app"
+                    type="password"
+                    autoFocus
+                    value={adminPinInput}
+                    onChange={(e) => {
+                      setAdminPinInput(e.target.value);
+                      setAdminPinError('');
+                    }}
+                    placeholder="Masukkan Password Admin"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm font-mono text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 transition-all text-center tracking-widest"
+                  />
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
+                    <span>Akses khusus Admin / Penanggung Jawab Repositori</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAdminPinModal(false);
+                      setAdminPinError('');
+                      setAdminPinInput('');
+                      setPendingAdminAction(null);
+                    }}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs rounded-xl transition-colors"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-lg flex items-center gap-2"
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    <span>Unlock Mode Admin</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
