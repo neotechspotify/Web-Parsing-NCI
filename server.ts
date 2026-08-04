@@ -1700,7 +1700,7 @@ app.get('/api/github-config', (req, res) => {
   try {
     const configPath = path.join(getDatabaseDir(), 'github.config.json');
     let config = {
-      githubToken: '',
+      githubToken: process.env.GITHUB_PAT || '',
       githubRepo: 'neotechspotify/Web-Parsing-NCI',
       githubBranch: 'main',
       githubFilePath: 'database/medika/blacklists/List-IP-Blacklist.txt',
@@ -1731,7 +1731,7 @@ app.post('/api/github-config', (req, res) => {
   try {
     const configPath = path.join(getDatabaseDir(), 'github.config.json');
     let existingConfig = {
-      githubToken: '',
+      githubToken: process.env.GITHUB_PAT || '',
       githubRepo: 'neotechspotify/Web-Parsing-NCI',
       githubBranch: 'main',
       githubFilePath: 'database/medika/blacklists/List-IP-Blacklist.txt',
@@ -1748,8 +1748,10 @@ app.post('/api/github-config', (req, res) => {
 
     const { githubToken, pat, githubRepo, repo, githubBranch, branch, githubFilePath, filepath, githubAutoSync, autoSync } = req.body;
 
+    let tokenVal = githubToken !== undefined ? githubToken : (pat !== undefined ? pat : existingConfig.githubToken);
+
     const newConfig = {
-      githubToken: githubToken !== undefined ? githubToken : (pat !== undefined ? pat : existingConfig.githubToken),
+      githubToken: tokenVal,
       githubRepo: githubRepo !== undefined ? githubRepo : (repo !== undefined ? repo : existingConfig.githubRepo),
       githubBranch: githubBranch !== undefined ? githubBranch : (branch !== undefined ? branch : existingConfig.githubBranch),
       githubFilePath: githubFilePath !== undefined ? githubFilePath : (filepath !== undefined ? filepath : existingConfig.githubFilePath),
@@ -1773,14 +1775,14 @@ app.post('/api/github-config', (req, res) => {
 app.all('/api/github-sync-pull', async (req, res) => {
   try {
     const configPath = path.join(getDatabaseDir(), 'github.config.json');
-    let token = '';
+    let token = process.env.GITHUB_PAT || '';
     let repoRaw = 'neotechspotify/Web-Parsing-NCI';
     let branch = 'main';
 
     if (fs.existsSync(configPath)) {
       try {
         const parsed = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-        token = parsed.githubToken || '';
+        token = parsed.githubToken || token;
         repoRaw = parsed.githubRepo || repoRaw;
         branch = parsed.githubBranch || branch;
       } catch (e) {}
