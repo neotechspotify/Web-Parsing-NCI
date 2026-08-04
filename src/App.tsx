@@ -1716,7 +1716,7 @@ function TemplatesTab({
         setGithubSyncStatus({
           loading: false,
           type: 'success',
-          message: `Berhasil sync template ${targetPath} ke GitHub (${cleanRepo}:${targetBranch}) pada ${nowStr}!`
+          message: `Berhasil sync template ${targetPath} ke GitHub pada ${nowStr}!`
         });
         return true;
       } else {

@@ -1849,7 +1849,7 @@ app.all('/api/github-sync-pull', async (req, res) => {
 
     res.json({
       success: true,
-      message: `Berhasil menarik (pull sync) ${pulledFiles.length} file dari GitHub (${cleanRepo}:${cleanBranch})!`,
+      message: `Berhasil menarik (pull sync) ${pulledFiles.length} file dari GitHub!`,
       count: pulledFiles.length,
       pulledFiles
     });

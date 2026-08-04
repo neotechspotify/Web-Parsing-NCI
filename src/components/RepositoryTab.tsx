@@ -308,7 +308,7 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
     const targetBranch = githubBranch.trim() || 'main';
     const targetPath = githubFilePath.trim() || `database/${selectedInstansi}/blacklists/${selectedFilename}`;
 
-    setGithubSyncStatus({ loading: true, type: null, message: `Committing to ${cleanRepo}:${targetPath}...` });
+    setGithubSyncStatus({ loading: true, type: null, message: `Committing to GitHub...` });
 
     try {
       // 1. Get existing file SHA if present on branch
@@ -359,7 +359,7 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
         setGithubSyncStatus({
           loading: false,
           type: 'success',
-          message: `Successfully pushed commit to GitHub (${cleanRepo}/${targetBranch}) at ${nowStr}!`,
+          message: `Successfully pushed commit to GitHub at ${nowStr}!`,
           lastSyncTime: nowStr
         });
         return true;
@@ -398,7 +398,7 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
     const targetBranch = githubBranch.trim() || 'main';
     const targetPath = githubFilePath.trim() || `database/${selectedInstansi}/blacklists/${selectedFilename}`;
 
-    setGithubSyncStatus({ loading: true, type: null, message: `Pulling from GitHub (${cleanRepo}/${targetPath})...` });
+    setGithubSyncStatus({ loading: true, type: null, message: `Pulling from GitHub...` });
 
     try {
       const getRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${targetBranch}`, {
@@ -418,12 +418,12 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
         }
         const fetchedText = new TextDecoder().decode(bytes);
 
-        await saveFileContent(fetchedText, `Synced from GitHub (${cleanRepo})`);
+        await saveFileContent(fetchedText, `Synced from GitHub`);
         const nowStr = new Date().toLocaleTimeString();
         setGithubSyncStatus({
           loading: false,
           type: 'success',
-          message: `Successfully pulled latest content from GitHub (${cleanRepo})!`,
+          message: `Successfully pulled latest content from GitHub!`,
           lastSyncTime: nowStr
         });
       } else {
