@@ -4,8 +4,8 @@ Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilak
 
 ===============================
 No Tiket : {ticket_id}
-Sec. Event : {event_type}
-Signature : {event_name}
+Sec. Event : Information Leak
+Signature : ET WEB_SERVER WEB-PHP phpinfo access
 Log Source : Suricata
 Severity : {severity}
 Action : {action}
