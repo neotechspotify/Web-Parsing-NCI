@@ -24,7 +24,12 @@ import {
   X,
   HelpCircle,
   Database,
-  Eye
+  Eye,
+  Github,
+  GitBranch,
+  CloudUpload,
+  Settings,
+  ShieldCheck
 } from 'lucide-react';
 import companyLogo from './assets/images/nci_shield_white_bg_1783343904191.jpg';
 import { LogEvent, ProcessResult } from './types';
@@ -1458,8 +1463,190 @@ function TemplatesTab({
   const [creating, setCreating] = useState(false);
   const [formMessage, setFormMessage] = useState<{ success: boolean; text: string } | null>(null);
 
+  // GitHub Integration States (Shared with RepositoryTab via localStorage)
+  const [githubToken, setGithubToken] = useState<string>(() => localStorage.getItem('github_pat') || '');
+  const [githubRepo, setGithubRepo] = useState<string>(() => localStorage.getItem('github_repo') || 'neotechspotify/Web-Parsing-NCI');
+  const [githubBranch, setGithubBranch] = useState<string>(() => localStorage.getItem('github_branch') || 'main');
+  const [githubAutoSync, setGithubAutoSync] = useState<boolean>(() => localStorage.getItem('github_autosync') === 'true');
+  const [showGithubModal, setShowGithubModal] = useState<boolean>(false);
+  const [githubSyncStatus, setGithubSyncStatus] = useState<{
+    loading: boolean;
+    type: 'success' | 'error' | null;
+    message: string;
+  }>({ loading: false, type: null, message: '' });
+
+  // Sync token and repo from localStorage whenever component mounts or modal opens
+  useEffect(() => {
+    const savedPat = localStorage.getItem('github_pat');
+    const savedRepo = localStorage.getItem('github_repo');
+    const savedBranch = localStorage.getItem('github_branch');
+    const savedAutoSync = localStorage.getItem('github_autosync');
+
+    if (savedPat) setGithubToken(savedPat);
+    if (savedRepo) setGithubRepo(savedRepo);
+    if (savedBranch) setGithubBranch(savedBranch);
+    if (savedAutoSync !== null) setGithubAutoSync(savedAutoSync === 'true');
+  }, [showGithubModal]);
+
+  // Temp form states for Modal
+  const [tempPat, setTempPat] = useState(githubToken);
+  const [tempRepo, setTempRepo] = useState(githubRepo);
+  const [tempBranch, setTempBranch] = useState(githubBranch);
+  const [tempAutoSync, setTempAutoSync] = useState(githubAutoSync);
+
+  const saveGithubSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanPat = tempPat.trim();
+    const cleanRepo = tempRepo.trim() || 'neotechspotify/Web-Parsing-NCI';
+    const cleanBranch = tempBranch.trim() || 'main';
+
+    setGithubToken(cleanPat);
+    setGithubRepo(cleanRepo);
+    setGithubBranch(cleanBranch);
+    setGithubAutoSync(tempAutoSync);
+
+    localStorage.setItem('github_pat', cleanPat);
+    localStorage.setItem('github_repo', cleanRepo);
+    localStorage.setItem('github_branch', cleanBranch);
+    localStorage.setItem('github_autosync', tempAutoSync ? 'true' : 'false');
+    setShowGithubModal(false);
+    setGithubSyncStatus({
+      loading: false,
+      type: 'success',
+      message: 'Konfigurasi GitHub Sync berhasil disimpan & disinkronkan ke seluruh menu!'
+    });
+  };
+
   const list = templates[selectedInstansi] || [];
   const filteredTemplates = list.filter((t) => t.toLowerCase().includes(searchQuery.toLowerCase()));
+
+  // Commit template directly to GitHub REST API
+  const commitTemplateToGitHub = async (instansi: string, filename: string, content: string, customMsg?: string) => {
+    const pat = (githubToken || localStorage.getItem('github_pat') || '').trim();
+    const repoRaw = (githubRepo || localStorage.getItem('github_repo') || 'neotechspotify/Web-Parsing-NCI').trim();
+    if (!pat || !repoRaw) {
+      setGithubSyncStatus({
+        loading: false,
+        type: 'error',
+        message: 'GitHub Sync belum dikonfigurasi. Silakan isi Personal Access Token di GitHub Settings.'
+      });
+      return false;
+    }
+
+    const cleanRepo = repoRaw.replace('https://github.com/', '').replace('.git', '').trim();
+    const targetBranch = githubBranch.trim() || 'main';
+    const cleanName = filename.endsWith('.txt') ? filename : `${filename}.txt`;
+    const targetPath = `templates/${instansi.toLowerCase()}/${cleanName}`;
+
+    setGithubSyncStatus({ loading: true, type: null, message: `Mengirim ${targetPath} ke GitHub...` });
+
+    try {
+      // 1. Get existing file SHA if present
+      let existingSha = '';
+      const getRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${targetBranch}`, {
+        headers: {
+          'Authorization': `Bearer ${pat}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+
+      if (getRes.ok) {
+        const getData = await getRes.json();
+        existingSha = getData.sha;
+      }
+
+      // 2. Encode UTF-8 content to Base64
+      const utf8Bytes = new TextEncoder().encode(content);
+      let binaryString = '';
+      for (let i = 0; i < utf8Bytes.byteLength; i++) {
+        binaryString += String.fromCharCode(utf8Bytes[i]);
+      }
+      const base64Content = btoa(binaryString);
+
+      // 3. PUT request to commit file
+      const putRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${pat}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: customMsg || `feat(template): sync ${targetPath} via Web UI`,
+          content: base64Content,
+          branch: targetBranch,
+          ...(existingSha ? { sha: existingSha } : {})
+        })
+      });
+
+      const putData = await putRes.json();
+      if (putRes.ok) {
+        const nowStr = new Date().toLocaleTimeString();
+        setGithubSyncStatus({
+          loading: false,
+          type: 'success',
+          message: `Berhasil sync template ${targetPath} ke GitHub (${cleanRepo}:${targetBranch}) pada ${nowStr}!`
+        });
+        return true;
+      } else {
+        throw new Error(putData.message || 'Error dari API GitHub');
+      }
+    } catch (err: any) {
+      setGithubSyncStatus({
+        loading: false,
+        type: 'error',
+        message: `Gagal sync ke GitHub: ${err.message}`
+      });
+      return false;
+    }
+  };
+
+  // Delete template file from GitHub REST API
+  const deleteTemplateFromGitHub = async (instansi: string, filename: string) => {
+    const pat = (githubToken || localStorage.getItem('github_pat') || '').trim();
+    const repoRaw = (githubRepo || localStorage.getItem('github_repo') || 'neotechspotify/Web-Parsing-NCI').trim();
+    if (!pat || !repoRaw) return false;
+
+    const cleanRepo = repoRaw.replace('https://github.com/', '').replace('.git', '').trim();
+    const targetBranch = (githubBranch || localStorage.getItem('github_branch') || 'main').trim();
+    const cleanName = filename.endsWith('.txt') ? filename : `${filename}.txt`;
+    const targetPath = `templates/${instansi.toLowerCase()}/${cleanName}`;
+
+    try {
+      const getRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${targetBranch}`, {
+        headers: {
+          'Authorization': `Bearer ${pat}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+
+      if (getRes.ok) {
+        const getData = await getRes.json();
+        const existingSha = getData.sha;
+
+        await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${pat}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            message: `chore(template): delete ${targetPath} via Web UI`,
+            sha: existingSha,
+            branch: targetBranch
+          })
+        });
+        setGithubSyncStatus({
+          loading: false,
+          type: 'success',
+          message: `Template ${targetPath} berhasil dihapus dari GitHub!`
+        });
+      }
+    } catch (e) {
+      console.error('Failed to delete template from GitHub:', e);
+    }
+  };
 
   const handlePreview = async (tName: string) => {
     try {
@@ -1493,6 +1680,13 @@ function TemplatesTab({
       if (data.success) {
         setActiveTemplate((prev) => (prev ? { ...prev, content: editedContent } : null));
         setEditing(false);
+
+        // Auto Sync or Push to GitHub if credentials set
+        const effectivePat = githubToken || localStorage.getItem('github_pat') || '';
+        const effectiveRepo = githubRepo || localStorage.getItem('github_repo') || 'neotechspotify/Web-Parsing-NCI';
+        if (effectivePat && effectiveRepo) {
+          await commitTemplateToGitHub(activeTemplate.instansi, activeTemplate.name, editedContent);
+        }
       }
     } catch (e) {
       console.error(e);
@@ -1509,6 +1703,11 @@ function TemplatesTab({
       });
       const data = await res.json();
       if (data.success) {
+        const effectivePat = githubToken || localStorage.getItem('github_pat') || '';
+        const effectiveRepo = githubRepo || localStorage.getItem('github_repo') || 'neotechspotify/Web-Parsing-NCI';
+        if (effectivePat && effectiveRepo) {
+          await deleteTemplateFromGitHub(activeTemplate.instansi, activeTemplate.name);
+        }
         setActiveTemplate(null);
         setDeleting(false);
         fetchTemplates();
@@ -1537,13 +1736,28 @@ function TemplatesTab({
       });
       const data = await res.json();
       if (data.success) {
-        setFormMessage({ success: true, text: data.message });
+        let textMsg = data.message;
+        // Auto commit to GitHub if Token & Repo are configured
+        const effectivePat = githubToken || localStorage.getItem('github_pat') || '';
+        const effectiveRepo = githubRepo || localStorage.getItem('github_repo') || 'neotechspotify/Web-Parsing-NCI';
+        if (effectivePat && effectiveRepo) {
+          const synced = await commitTemplateToGitHub(
+            newInstansi,
+            data.cleanFilename || newFilename,
+            data.content || '',
+            `feat(template): add new template ${newInstansi}/${data.cleanFilename || newFilename}`
+          );
+          if (synced) {
+            textMsg += ' & tersync langsung ke GitHub!';
+          }
+        }
+        setFormMessage({ success: true, text: textMsg });
         setNewFilename('');
         setNewDeskripsi('');
         setNewMitigasi('');
         fetchTemplates();
       } else {
-        setFormMessage({ success: false, text: data.error || 'Failed to create template' });
+        setFormMessage({ success: false, text: data.error || 'Gagal membuat template' });
       }
     } catch (e: any) {
       setFormMessage({ success: false, text: e.message });
@@ -1552,319 +1766,517 @@ function TemplatesTab({
     }
   };
 
+  const isGithubConfigured = Boolean(githubToken.trim() && githubRepo.trim());
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
-      className="grid grid-cols-1 lg:grid-cols-12 gap-6"
+      className="flex flex-col gap-6"
     >
-      {/* List & Search Side */}
-      <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col gap-4 shadow-lg">
-        <div className="flex items-center gap-2 border-b border-slate-800 pb-3 justify-between">
+      {/* GitHub Sync Header Banner */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className={`p-2 rounded-lg border shrink-0 ${isGithubConfigured ? 'bg-indigo-950/50 border-indigo-800/60 text-indigo-400' : 'bg-amber-950/40 border-amber-800/40 text-amber-400'}`}>
+            <Github className="h-5 w-5" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-bold text-slate-200">GitHub Template Sync Engine</h3>
+              {isGithubConfigured ? (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded-full">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Connected ({githubRepo})
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-950/60 border border-amber-800/60 px-2 py-0.5 rounded-full">
+                  <AlertTriangle className="h-3 w-3" />
+                  Sync Disconnected
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400 max-w-2xl leading-relaxed">
+              Agar template baru (seperti <code className="text-indigo-400 bg-slate-950 px-1 py-0.5 rounded">templates/kemkes/*.txt</code>) tidak hilang saat server restart, hubungkan GitHub PAT. Setiap pembuatan/perubahan template akan langsung dipush ke repository.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+          {activeTemplate && isGithubConfigured && (
+            <button
+              onClick={() => commitTemplateToGitHub(activeTemplate.instansi, activeTemplate.name, activeTemplate.content)}
+              disabled={githubSyncStatus.loading}
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow"
+              title="Push template ini langsung ke GitHub"
+            >
+              <CloudUpload className="h-3.5 w-3.5" />
+              Push to GitHub
+            </button>
+          )}
+
+          <button
+            onClick={() => {
+              setTempPat(githubToken);
+              setTempRepo(githubRepo);
+              setTempBranch(githubBranch);
+              setTempAutoSync(githubAutoSync);
+              setShowGithubModal(true);
+            }}
+            className="px-3 py-1.5 bg-slate-950 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5"
+          >
+            <Settings className="h-3.5 w-3.5 text-indigo-400" />
+            GitHub Settings
+          </button>
+        </div>
+      </div>
+
+      {/* Sync status alert banner if active */}
+      {githubSyncStatus.message && (
+        <div
+          className={`px-4 py-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 ${
+            githubSyncStatus.loading
+              ? 'bg-indigo-950/40 border-indigo-800/40 text-indigo-300'
+              : githubSyncStatus.type === 'success'
+              ? 'bg-emerald-950/40 border-emerald-800/40 text-emerald-300'
+              : 'bg-rose-950/40 border-rose-800/40 text-rose-300'
+          }`}
+        >
           <div className="flex items-center gap-2">
-            <FileText className="h-4 w-4 text-indigo-400" />
-            <h2 className="text-sm font-semibold uppercase text-slate-300 tracking-wider">Templates Library</h2>
+            {githubSyncStatus.loading ? (
+              <RefreshCw className="h-3.5 w-3.5 animate-spin text-indigo-400" />
+            ) : githubSyncStatus.type === 'success' ? (
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+            ) : (
+              <AlertTriangle className="h-3.5 w-3.5 text-rose-400" />
+            )}
+            <span>{githubSyncStatus.message}</span>
           </div>
-          {/* Instansi Switcher */}
-          <div className="flex bg-slate-950 p-1 rounded-md border border-slate-800">
-            {instansiList.map((ins) => (
-              <button
-                key={ins}
-                onClick={() => {
-                  setSelectedInstansi(ins);
-                  setActiveTemplate(null);
-                  setSearchQuery('');
-                }}
-                className={`px-3 py-1 rounded-md text-[10px] font-bold tracking-wide uppercase transition-all ${
-                  selectedInstansi === ins
-                    ? 'bg-indigo-600 text-white shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {ins}
-              </button>
-            ))}
-          </div>
+          <button
+            onClick={() => setGithubSyncStatus({ loading: false, type: null, message: '' })}
+            className="text-slate-400 hover:text-white"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
+      )}
 
-        {/* Search Input */}
-        <div className="relative">
-          <Search className="h-4 w-4 text-slate-500 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-200"
-            placeholder="Search templates..."
-          />
-        </div>
-
-        {/* Templates Items Scroll container */}
-        <div className="flex-1 max-h-[300px] overflow-y-auto pr-1 flex flex-col gap-1.5 border border-slate-800/40 p-2 rounded-lg bg-slate-950/40">
-          {loading ? (
-            <p className="text-xs text-slate-500 text-center py-6">Loading templates...</p>
-          ) : filteredTemplates.length === 0 ? (
-            <p className="text-xs text-slate-500 text-center py-6">No matching templates found</p>
-          ) : (
-            filteredTemplates.map((tName) => {
-              const isActive = activeTemplate?.name === tName;
-              return (
+      {/* Main Grid: List & Editor */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* List & Search Side */}
+        <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col gap-4 shadow-lg">
+          <div className="flex items-center gap-2 border-b border-slate-800 pb-3 justify-between">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-indigo-400" />
+              <h2 className="text-sm font-semibold uppercase text-slate-300 tracking-wider">Templates Library</h2>
+            </div>
+            {/* Instansi Switcher */}
+            <div className="flex bg-slate-950 p-1 rounded-md border border-slate-800">
+              {instansiList.map((ins) => (
                 <button
-                  key={tName}
-                  onClick={() => handlePreview(tName)}
-                  className={`w-full px-3 py-2 text-left rounded-lg text-xs font-medium transition-all flex items-center justify-between border ${
-                    isActive
-                      ? 'bg-indigo-600 text-white border-indigo-500'
-                      : 'bg-slate-900 border-transparent text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                  key={ins}
+                  onClick={() => {
+                    setSelectedInstansi(ins);
+                    setActiveTemplate(null);
+                    setSearchQuery('');
+                  }}
+                  className={`px-3 py-1 rounded-md text-[10px] font-bold tracking-wide uppercase transition-all ${
+                    selectedInstansi === ins
+                      ? 'bg-indigo-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  <span className="truncate pr-4">{tName.replace(/[_\-]+/g, ' ')}</span>
-                  <ChevronIcon isActive={isActive} />
+                  {ins}
                 </button>
-              );
-            })
-          )}
-        </div>
-
-        {/* Create Template Subform */}
-        <div className="border-t border-slate-800 pt-4 flex flex-col gap-3">
-          <h3 className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-            <PlusCircle className="h-4 w-4 text-indigo-400" />
-            Create New Template
-          </h3>
-          <form onSubmit={handleCreateTemplate} className="flex flex-col gap-2.5">
-            <div className="grid grid-cols-2 gap-2">
-              <select
-                value={newInstansi}
-                onChange={(e) => setNewInstansi(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-xs text-slate-300 focus:outline-none"
-              >
-                {instansiList.map((ins) => (
-                  <option key={ins} value={ins}>
-                    {ins.toUpperCase()}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                type="text"
-                value={newFilename}
-                onChange={(e) => setNewFilename(e.target.value)}
-                required
-                className="w-full bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-xs text-slate-200 focus:outline-none placeholder-slate-600"
-                placeholder="Filename (e.g. Malware_Scan)"
-              />
+              ))}
             </div>
+          </div>
 
-            <textarea
-              value={newDeskripsi}
-              onChange={(e) => setNewDeskripsi(e.target.value)}
-              className="w-full h-12 bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-200 focus:outline-none resize-none placeholder-slate-600"
-              placeholder="Deskripsi Event placeholder value..."
+          {/* Search Input */}
+          <div className="relative">
+            <Search className="h-4 w-4 text-slate-500 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-200"
+              placeholder="Search templates..."
             />
+          </div>
 
-            {newInstansi === 'sophos' && (
-              <>
-                <textarea
-                  value={newAnalisaAwal}
-                  onChange={(e) => setNewAnalisaAwal(e.target.value)}
-                  className="w-full h-12 bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-200 focus:outline-none resize-none placeholder-slate-600"
-                  placeholder="Analisa Awal placeholder value..."
-                />
+          {/* Templates Items Scroll container */}
+          <div className="flex-1 max-h-[300px] overflow-y-auto pr-1 flex flex-col gap-1.5 border border-slate-800/40 p-2 rounded-lg bg-slate-950/40">
+            {loading ? (
+              <p className="text-xs text-slate-500 text-center py-6">Loading templates...</p>
+            ) : filteredTemplates.length === 0 ? (
+              <p className="text-xs text-slate-500 text-center py-6">No matching templates found</p>
+            ) : (
+              filteredTemplates.map((tName) => {
+                const isActive = activeTemplate?.name === tName;
+                return (
+                  <button
+                    key={tName}
+                    onClick={() => handlePreview(tName)}
+                    className={`w-full px-3 py-2 text-left rounded-lg text-xs font-medium transition-all flex items-center justify-between border ${
+                      isActive
+                        ? 'bg-indigo-600 text-white border-indigo-500'
+                        : 'bg-slate-900 border-transparent text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                    }`}
+                  >
+                    <span className="truncate pr-4">{tName.replace(/[_\-]+/g, ' ')}</span>
+                    <ChevronIcon isActive={isActive} />
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          {/* Create Template Subform */}
+          <div className="border-t border-slate-800 pt-4 flex flex-col gap-3">
+            <h3 className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+              <PlusCircle className="h-4 w-4 text-indigo-400" />
+              Create New Template
+            </h3>
+            <form onSubmit={handleCreateTemplate} className="flex flex-col gap-2.5">
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={newInstansi}
+                  onChange={(e) => setNewInstansi(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-xs text-slate-300 focus:outline-none"
+                >
+                  {instansiList.map((ins) => (
+                    <option key={ins} value={ins}>
+                      {ins.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
 
                 <input
                   type="text"
-                  value={newReputasi}
-                  onChange={(e) => setNewReputasi(e.target.value)}
+                  value={newFilename}
+                  onChange={(e) => setNewFilename(e.target.value)}
+                  required
                   className="w-full bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-xs text-slate-200 focus:outline-none placeholder-slate-600"
-                  placeholder="Reputasi (e.g. Malicious/Legitimate/-)"
+                  placeholder="Filename (e.g. Malware_Scan)"
                 />
-              </>
-            )}
+              </div>
 
-            <textarea
-              value={newMitigasi}
-              onChange={(e) => setNewMitigasi(e.target.value)}
-              className="w-full h-12 bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-200 focus:outline-none resize-none placeholder-slate-600"
-              placeholder="Mitigasi placeholder value..."
-            />
+              <textarea
+                value={newDeskripsi}
+                onChange={(e) => setNewDeskripsi(e.target.value)}
+                className="w-full h-12 bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-200 focus:outline-none resize-none placeholder-slate-600"
+                placeholder="Deskripsi Event placeholder value..."
+              />
 
-            {formMessage && (
-              <p className={`text-[10px] ${formMessage.success ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {formMessage.text}
-              </p>
-            )}
+              {newInstansi === 'sophos' && (
+                <>
+                  <textarea
+                    value={newAnalisaAwal}
+                    onChange={(e) => setNewAnalisaAwal(e.target.value)}
+                    className="w-full h-12 bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-200 focus:outline-none resize-none placeholder-slate-600"
+                    placeholder="Analisa Awal placeholder value..."
+                  />
 
-            <button
-              type="submit"
-              disabled={creating}
-              className="py-1.5 px-3 bg-indigo-600 hover:bg-indigo-500 text-[10px] font-bold text-white rounded-lg flex items-center justify-center gap-1.5 shadow"
+                  <input
+                    type="text"
+                    value={newReputasi}
+                    onChange={(e) => setNewReputasi(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-xs text-slate-200 focus:outline-none placeholder-slate-600"
+                    placeholder="Reputasi (e.g. Malicious/Legitimate/-)"
+                  />
+                </>
+              )}
+
+              <textarea
+                value={newMitigasi}
+                onChange={(e) => setNewMitigasi(e.target.value)}
+                className="w-full h-12 bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-200 focus:outline-none resize-none placeholder-slate-600"
+                placeholder="Mitigasi placeholder value..."
+              />
+
+              {formMessage && (
+                <p className={`text-[10px] ${formMessage.success ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {formMessage.text}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={creating}
+                className="py-1.5 px-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-[10px] font-bold text-white rounded-lg flex items-center justify-center gap-1.5 shadow"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Generate & Sync Template
+              </button>
+            </form>
+          </div>
+        </div>
+
+        {/* Editor & Preview Side */}
+        <div className="lg:col-span-7 flex flex-col gap-4">
+          {!activeTemplate ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col gap-4 text-center items-center justify-center min-h-[500px] shadow-lg">
+              <div className="h-12 w-12 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center">
+                <Eye className="h-5 w-5 text-slate-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-slate-200">Template Viewer & Editor</h3>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto mt-2 leading-relaxed">
+                  Select a template from the list to preview its exact text layout, edit placeholders directly on disk, or delete them safely.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg flex flex-col h-full min-h-[500px]"
             >
-              <Plus className="h-3.5 w-3.5" />
-              Generate File From Base
-            </button>
-          </form>
+              {/* Template Header Toolbar */}
+              <div className="bg-slate-900 px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-4">
+                <div>
+                  <span className="text-[10px] font-bold tracking-wider uppercase text-indigo-400 bg-indigo-950/50 border border-indigo-900/40 px-2 py-0.5 rounded-md">
+                    {activeTemplate.instansi}
+                  </span>
+                  <h3 className="text-xs font-bold text-slate-200 mt-1 truncate max-w-[200px] sm:max-w-md">
+                    {activeTemplate.formattedName}
+                  </h3>
+                </div>
+
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => {
+                      setActiveTab('manual');
+                    }}
+                    className="px-2.5 py-1 bg-slate-950 border border-slate-800 hover:bg-slate-800 hover:text-white rounded-lg text-[10px] font-semibold text-indigo-400 transition-all flex items-center gap-1"
+                    title="Use in manual report form"
+                  >
+                    <PlusCircle className="h-3.5 w-3.5" />
+                    Use Template
+                  </button>
+
+                  {isGithubConfigured && (
+                    <button
+                      onClick={() => commitTemplateToGitHub(activeTemplate.instansi, activeTemplate.name, activeTemplate.content)}
+                      disabled={githubSyncStatus.loading}
+                      className="p-1.5 bg-slate-950 border border-slate-800 hover:bg-slate-800 hover:text-indigo-400 rounded-lg text-slate-300 transition-colors"
+                      title="Push to GitHub"
+                    >
+                      <CloudUpload className="h-4 w-4 text-indigo-400" />
+                    </button>
+                  )}
+
+                  {!editing ? (
+                    <button
+                      onClick={() => setEditing(true)}
+                      className="p-1.5 bg-slate-950 border border-slate-800 hover:bg-slate-800 hover:text-white rounded-lg text-slate-300 transition-colors"
+                      title="Edit Template text"
+                    >
+                      <Edit3 className="h-4 w-4 text-indigo-400" />
+                    </button>
+                  ) : (
+                    <div className="flex gap-1">
+                      <button
+                        onClick={handleSaveChanges}
+                        disabled={saving}
+                        className="p-1.5 bg-emerald-600/20 border border-emerald-500/40 hover:bg-emerald-600 rounded-lg text-emerald-400 hover:text-white transition-colors flex items-center gap-1 text-[10px] font-bold"
+                        title="Save & Push Changes"
+                      >
+                        <Check className="h-4 w-4" />
+                        Save
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditing(false);
+                          setEditedContent(activeTemplate.content);
+                        }}
+                        className="p-1.5 bg-rose-600/20 border border-rose-500/40 hover:bg-rose-600 rounded-lg text-rose-400 hover:text-white transition-colors"
+                        title="Cancel Edit"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Delete template toggle */}
+                  {!deleting ? (
+                    <button
+                      onClick={() => setDeleting(true)}
+                      className="p-1.5 bg-slate-950 border border-slate-800 hover:bg-rose-950 hover:border-rose-900 rounded-lg text-slate-300 hover:text-rose-400 transition-colors"
+                      title="Delete Template"
+                    >
+                      <Trash2 className="h-4 w-4 text-indigo-400 hover:text-rose-400" />
+                    </button>
+                  ) : (
+                    <div className="flex bg-rose-950/20 border border-rose-800 p-0.5 rounded-lg items-center gap-1">
+                      <span className="text-[9px] text-rose-400 font-bold px-2">Sure?</span>
+                      <button
+                        onClick={handleDeleteTemplate}
+                        className="py-1 px-2 bg-rose-600 hover:bg-rose-500 text-[9px] font-bold text-white rounded"
+                      >
+                        Yes
+                      </button>
+                      <button
+                        onClick={() => setDeleting(false)}
+                        className="py-1 px-2 bg-slate-800 hover:bg-slate-700 text-[9px] font-bold text-slate-300 rounded"
+                      >
+                        No
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Template Body display / Textarea */}
+              <div className="p-4 flex-1 bg-slate-950 overflow-y-auto flex flex-col">
+                {!editing && activeTemplate.content && (activeTemplate.content.includes('<table') || activeTemplate.content.includes('</table>')) && (
+                  <div className="flex justify-end gap-1.5 border-b border-slate-800 pb-2 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setTemplatePreviewMode('rendered')}
+                      className={`px-3 py-1 rounded text-[9px] font-bold uppercase transition-all ${
+                        templatePreviewMode === 'rendered'
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Rendered
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTemplatePreviewMode('raw')}
+                      className={`px-3 py-1 rounded text-[9px] font-bold uppercase transition-all ${
+                        templatePreviewMode === 'raw'
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Raw Template Code
+                    </button>
+                  </div>
+                )}
+
+                {editing ? (
+                  <textarea
+                    value={editedContent}
+                    onChange={(e) => setEditedContent(e.target.value)}
+                    className="w-full h-[400px] bg-slate-950 border-0 p-2 font-mono text-xs text-slate-200 focus:outline-none focus:ring-0 resize-none leading-relaxed"
+                  />
+                ) : (
+                  templatePreviewMode === 'rendered' && (activeTemplate.content.includes('<table') || activeTemplate.content.includes('</table>')) ? (
+                    <div 
+                      className="text-xs text-slate-800 bg-white p-4 rounded border border-slate-200 select-text max-h-[400px] overflow-y-auto"
+                      dangerouslySetInnerHTML={{ __html: activeTemplate.content }}
+                    />
+                  ) : (
+                    <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap text-slate-300 p-2 select-text">
+                      {activeTemplate.content}
+                    </pre>
+                  )
+                )}
+              </div>
+            </motion.div>
+          )}
         </div>
       </div>
 
-      {/* Editor & Preview Side */}
-      <div className="lg:col-span-7 flex flex-col gap-4">
-        {!activeTemplate ? (
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col gap-4 text-center items-center justify-center min-h-[500px] shadow-lg">
-            <div className="h-12 w-12 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center">
-              <Eye className="h-5 w-5 text-slate-400" />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-slate-200">Template Viewer & Editor</h3>
-              <p className="text-xs text-slate-400 max-w-sm mx-auto mt-2 leading-relaxed">
-                Select a template from the list to preview its exact text layout, edit placeholders directly on disk, or delete them safely.
-              </p>
-            </div>
-          </div>
-        ) : (
+      {/* GitHub Integration Modal */}
+      {showGithubModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg flex flex-col h-full min-h-[500px]"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full shadow-2xl flex flex-col gap-4"
           >
-            {/* Template Header Toolbar */}
-            <div className="bg-slate-900 px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Github className="h-5 w-5 text-indigo-400" />
+                <h3 className="text-sm font-bold text-white">Konfigurasi GitHub Sync</h3>
+              </div>
+              <button
+                onClick={() => setShowGithubModal(false)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={saveGithubSettings} className="flex flex-col gap-3 text-xs">
               <div>
-                <span className="text-[10px] font-bold tracking-wider uppercase text-indigo-400 bg-indigo-950/50 border border-indigo-900/40 px-2 py-0.5 rounded-md">
-                  {activeTemplate.instansi}
-                </span>
-                <h3 className="text-xs font-bold text-slate-200 mt-1 truncate max-w-[200px] sm:max-w-md">
-                  {activeTemplate.formattedName}
-                </h3>
-              </div>
-
-              <div className="flex gap-2 shrink-0">
-                <button
-                  onClick={() => {
-                    // Navigate to Manual Tab & prefill template name
-                    // In real App.tsx we need to set form event name
-                    // For now, let the tab change and set state. To do that easily:
-                    setActiveTab('manual');
-                  }}
-                  className="px-2.5 py-1 bg-slate-950 border border-slate-800 hover:bg-slate-800 hover:text-white rounded-lg text-[10px] font-semibold text-indigo-400 transition-all flex items-center gap-1"
-                  title="Use in manual report form"
-                >
-                  <PlusCircle className="h-3.5 w-3.5" />
-                  Use Template
-                </button>
-
-                {!editing ? (
-                  <button
-                    onClick={() => setEditing(true)}
-                    className="p-1.5 bg-slate-950 border border-slate-800 hover:bg-slate-800 hover:text-white rounded-lg text-slate-300 transition-colors"
-                    title="Edit Template text"
-                  >
-                    <Edit3 className="h-4 w-4 text-indigo-400" />
-                  </button>
-                ) : (
-                  <div className="flex gap-1">
-                    <button
-                      onClick={handleSaveChanges}
-                      disabled={saving}
-                      className="p-1.5 bg-emerald-600/20 border border-emerald-500/40 hover:bg-emerald-600 rounded-lg text-emerald-400 hover:text-white transition-colors"
-                      title="Save Changes"
-                    >
-                      <Check className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setEditing(false);
-                        setEditedContent(activeTemplate.content);
-                      }}
-                      className="p-1.5 bg-rose-600/20 border border-rose-500/40 hover:bg-rose-600 rounded-lg text-rose-400 hover:text-white transition-colors"
-                      title="Cancel Edit"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                )}
-
-                {/* Delete template toggle */}
-                {!deleting ? (
-                  <button
-                    onClick={() => setDeleting(true)}
-                    className="p-1.5 bg-slate-950 border border-slate-800 hover:bg-rose-950 hover:border-rose-900 rounded-lg text-slate-300 hover:text-rose-400 transition-colors"
-                    title="Delete Template"
-                  >
-                    <Trash2 className="h-4 w-4 text-indigo-400 hover:text-rose-400" />
-                  </button>
-                ) : (
-                  <div className="flex bg-rose-950/20 border border-rose-800 p-0.5 rounded-lg items-center gap-1">
-                    <span className="text-[9px] text-rose-400 font-bold px-2">Sure?</span>
-                    <button
-                      onClick={handleDeleteTemplate}
-                      className="py-1 px-2 bg-rose-600 hover:bg-rose-500 text-[9px] font-bold text-white rounded"
-                    >
-                      Yes
-                    </button>
-                    <button
-                      onClick={() => setDeleting(false)}
-                      className="py-1 px-2 bg-slate-800 hover:bg-slate-700 text-[9px] font-bold text-slate-300 rounded"
-                    >
-                      No
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Template Body display / Textarea */}
-            <div className="p-4 flex-1 bg-slate-950 overflow-y-auto flex flex-col">
-              {!editing && activeTemplate.content && (activeTemplate.content.includes('<table') || activeTemplate.content.includes('</table>')) && (
-                <div className="flex justify-end gap-1.5 border-b border-slate-800 pb-2 mb-2">
-                  <button
-                    type="button"
-                    onClick={() => setTemplatePreviewMode('rendered')}
-                    className={`px-3 py-1 rounded text-[9px] font-bold uppercase transition-all ${
-                      templatePreviewMode === 'rendered'
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-slate-900 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    Rendered
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTemplatePreviewMode('raw')}
-                    className={`px-3 py-1 rounded text-[9px] font-bold uppercase transition-all ${
-                      templatePreviewMode === 'raw'
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-slate-900 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    Raw Template Code
-                  </button>
-                </div>
-              )}
-
-              {editing ? (
-                <textarea
-                  value={editedContent}
-                  onChange={(e) => setEditedContent(e.target.value)}
-                  className="w-full h-[400px] bg-slate-950 border-0 p-2 font-mono text-xs text-slate-200 focus:outline-none focus:ring-0 resize-none leading-relaxed"
+                <label className="block text-slate-300 font-semibold mb-1">
+                  GitHub Personal Access Token (PAT)
+                </label>
+                <input
+                  type="password"
+                  value={tempPat}
+                  onChange={(e) => setTempPat(e.target.value)}
+                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 />
-              ) : (
-                templatePreviewMode === 'rendered' && (activeTemplate.content.includes('<table') || activeTemplate.content.includes('</table>')) ? (
-                  <div 
-                    className="text-xs text-slate-800 bg-white p-4 rounded border border-slate-200 select-text max-h-[400px] overflow-y-auto"
-                    dangerouslySetInnerHTML={{ __html: activeTemplate.content }}
-                  />
-                ) : (
-                  <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap text-slate-300 p-2 select-text">
-                    {activeTemplate.content}
-                  </pre>
-                )
-              )}
-            </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Butuh scope <code className="text-indigo-400">repo</code> atau <code className="text-indigo-400">contents:write</code>.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Repository (username/repository)
+                </label>
+                <input
+                  type="text"
+                  value={tempRepo}
+                  onChange={(e) => setTempRepo(e.target.value)}
+                  placeholder="username/my-soc-repo"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Target Branch
+                </label>
+                <input
+                  type="text"
+                  value={tempBranch}
+                  onChange={(e) => setTempBranch(e.target.value)}
+                  placeholder="main"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-between bg-slate-950 p-3 rounded-lg border border-slate-800">
+                <div>
+                  <p className="font-semibold text-slate-200">Auto-Sync to GitHub</p>
+                  <p className="text-[10px] text-slate-400">Otomatis push saat template dibuat / diedit</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={tempAutoSync}
+                  onChange={(e) => setTempAutoSync(e.target.checked)}
+                  className="h-4 w-4 accent-indigo-600 rounded cursor-pointer"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 mt-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowGithubModal(false)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-semibold"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold flex items-center gap-1.5"
+                >
+                  <Check className="h-4 w-4" />
+                  Simpan Konfigurasi
+                </button>
+              </div>
+            </form>
           </motion.div>
-        )}
-      </div>
+        </div>
+      )}
     </motion.div>
   );
 }

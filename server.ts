@@ -1810,7 +1810,12 @@ app.post('/api/templates/create', (req, res) => {
     content = content.replace(/{reputasi}/g, req.body.reputasi || '-');
 
     fs.writeFileSync(targetTemplatePath, content, 'utf-8');
-    res.json({ success: true, message: `Template saved successfully as ${instansi}/${cleanFilename}` });
+    res.json({
+      success: true,
+      message: `Template saved successfully as ${instansi}/${cleanFilename}`,
+      cleanFilename,
+      content
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
