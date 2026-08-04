@@ -1585,7 +1585,7 @@ function TemplatesTab({
         setGithubSyncStatus({
           loading: false,
           type: 'success',
-          message: `Berhasil sync template ${targetPath} ke GitHub (${cleanRepo}:${targetBranch}) pada ${nowStr}!`
+          message: `Berhasil sync template ${targetPath} ke GitHub pada ${nowStr}!`
         });
         return true;
       } else {
@@ -1787,7 +1787,7 @@ function TemplatesTab({
               {isGithubConfigured ? (
                 <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded-full">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Connected ({githubRepo})
+                  Connected
                 </span>
               ) : (
                 <span className="flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-950/60 border border-amber-800/60 px-2 py-0.5 rounded-full">
@@ -1814,20 +1814,6 @@ function TemplatesTab({
               Push to GitHub
             </button>
           )}
-
-          <button
-            onClick={() => {
-              setTempPat(githubToken);
-              setTempRepo(githubRepo);
-              setTempBranch(githubBranch);
-              setTempAutoSync(githubAutoSync);
-              setShowGithubModal(true);
-            }}
-            className="px-3 py-1.5 bg-slate-950 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5"
-          >
-            <Settings className="h-3.5 w-3.5 text-indigo-400" />
-            GitHub Settings
-          </button>
         </div>
       </div>
 
