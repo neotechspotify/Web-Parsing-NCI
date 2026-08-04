@@ -1821,6 +1821,44 @@ app.post('/api/templates/create', (req, res) => {
   }
 });
 
+// --- GITHUB GLOBAL CONFIG ENDPOINTS ---
+const GITHUB_CONFIG_FILE = path.join(process.cwd(), 'database', 'github-config.json');
+
+app.get('/api/github-config', (req, res) => {
+  try {
+    if (fs.existsSync(GITHUB_CONFIG_FILE)) {
+      const data = fs.readFileSync(GITHUB_CONFIG_FILE, 'utf-8');
+      return res.json(JSON.parse(data));
+    }
+    return res.json({
+      pat: process.env.GITHUB_PAT || '',
+      repo: process.env.GITHUB_REPO || 'neotechspotify/Web-Parsing-NCI',
+      branch: process.env.GITHUB_BRANCH || 'main',
+      autoSync: true
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/github-config', (req, res) => {
+  try {
+    const { pat, repo, branch, autoSync } = req.body;
+    const configData = {
+      pat: pat || '',
+      repo: repo || 'neotechspotify/Web-Parsing-NCI',
+      branch: branch || 'main',
+      autoSync: autoSync ?? true,
+      updatedAt: new Date().toISOString()
+    };
+    fs.mkdirSync(path.dirname(GITHUB_CONFIG_FILE), { recursive: true });
+    fs.writeFileSync(GITHUB_CONFIG_FILE, JSON.stringify(configData, null, 2), 'utf-8');
+    res.json({ success: true, message: 'Server GitHub config updated!', config: configData });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // --- BLACKLISTS API VARIABLES, HELPERS & ENDPOINTS ---
 const BLACKLIST_FILENAMES = [
   "List-IP-Blacklist.txt",

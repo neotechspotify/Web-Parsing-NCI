@@ -1475,17 +1475,44 @@ function TemplatesTab({
     message: string;
   }>({ loading: false, type: null, message: '' });
 
-  // Sync token and repo from localStorage whenever component mounts or modal opens
+  // Sync token and repo from server and localStorage on mount or when modal opens
   useEffect(() => {
-    const savedPat = localStorage.getItem('github_pat');
-    const savedRepo = localStorage.getItem('github_repo');
-    const savedBranch = localStorage.getItem('github_branch');
-    const savedAutoSync = localStorage.getItem('github_autosync');
+    fetch('/api/github-config')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.pat) {
+          setGithubToken(data.pat);
+          localStorage.setItem('github_pat', data.pat);
+        } else {
+          const savedPat = localStorage.getItem('github_pat');
+          if (savedPat) setGithubToken(savedPat);
+        }
 
-    if (savedPat) setGithubToken(savedPat);
-    if (savedRepo) setGithubRepo(savedRepo);
-    if (savedBranch) setGithubBranch(savedBranch);
-    if (savedAutoSync !== null) setGithubAutoSync(savedAutoSync === 'true');
+        const repo = data?.repo || localStorage.getItem('github_repo') || 'neotechspotify/Web-Parsing-NCI';
+        setGithubRepo(repo);
+        localStorage.setItem('github_repo', repo);
+
+        const branch = data?.branch || localStorage.getItem('github_branch') || 'main';
+        setGithubBranch(branch);
+        localStorage.setItem('github_branch', branch);
+
+        if (data?.autoSync !== undefined) {
+          setGithubAutoSync(Boolean(data.autoSync));
+          localStorage.setItem('github_autosync', data.autoSync ? 'true' : 'false');
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to fetch global github-config:', err);
+        const savedPat = localStorage.getItem('github_pat');
+        const savedRepo = localStorage.getItem('github_repo');
+        const savedBranch = localStorage.getItem('github_branch');
+        const savedAutoSync = localStorage.getItem('github_autosync');
+
+        if (savedPat) setGithubToken(savedPat);
+        if (savedRepo) setGithubRepo(savedRepo);
+        if (savedBranch) setGithubBranch(savedBranch);
+        if (savedAutoSync !== null) setGithubAutoSync(savedAutoSync === 'true');
+      });
   }, [showGithubModal]);
 
   // Temp form states for Modal
@@ -1494,7 +1521,7 @@ function TemplatesTab({
   const [tempBranch, setTempBranch] = useState(githubBranch);
   const [tempAutoSync, setTempAutoSync] = useState(githubAutoSync);
 
-  const saveGithubSettings = (e: React.FormEvent) => {
+  const saveGithubSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanPat = tempPat.trim();
     const cleanRepo = tempRepo.trim() || 'neotechspotify/Web-Parsing-NCI';
@@ -1509,11 +1536,28 @@ function TemplatesTab({
     localStorage.setItem('github_repo', cleanRepo);
     localStorage.setItem('github_branch', cleanBranch);
     localStorage.setItem('github_autosync', tempAutoSync ? 'true' : 'false');
+
+    // Save globally to server so all PCs connect automatically
+    try {
+      await fetch('/api/github-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pat: cleanPat,
+          repo: cleanRepo,
+          branch: cleanBranch,
+          autoSync: tempAutoSync
+        })
+      });
+    } catch (err) {
+      console.error('Failed to persist github-config to server:', err);
+    }
+
     setShowGithubModal(false);
     setGithubSyncStatus({
       loading: false,
       type: 'success',
-      message: 'Konfigurasi GitHub Sync berhasil disimpan & disinkronkan ke seluruh menu!'
+      message: 'Konfigurasi GitHub Sync berhasil disimpan & disinkronkan ke seluruh PC/Menu!'
     });
   };
 
@@ -1800,20 +1844,6 @@ function TemplatesTab({
               Agar template baru (seperti <code className="text-indigo-400 bg-slate-950 px-1 py-0.5 rounded">templates/kemkes/*.txt</code>) tidak hilang saat server restart, hubungkan GitHub PAT. Setiap pembuatan/perubahan template akan langsung dipush ke repository.
             </p>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
-          {activeTemplate && isGithubConfigured && (
-            <button
-              onClick={() => commitTemplateToGitHub(activeTemplate.instansi, activeTemplate.name, activeTemplate.content)}
-              disabled={githubSyncStatus.loading}
-              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow"
-              title="Push template ini langsung ke GitHub"
-            >
-              <CloudUpload className="h-3.5 w-3.5" />
-              Push to GitHub
-            </button>
-          )}
         </div>
       </div>
 
