@@ -1769,6 +1769,94 @@ app.post('/api/github-config', (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+app.all('/api/github-sync-pull', async (req, res) => {
+  try {
+    const configPath = path.join(getDatabaseDir(), 'github.config.json');
+    let token = '';
+    let repoRaw = 'neotechspotify/Web-Parsing-NCI';
+    let branch = 'main';
+
+    if (fs.existsSync(configPath)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        token = parsed.githubToken || '';
+        repoRaw = parsed.githubRepo || repoRaw;
+        branch = parsed.githubBranch || branch;
+      } catch (e) {}
+    }
+
+    if (req.body?.githubToken) token = req.body.githubToken;
+    if (req.body?.githubRepo) repoRaw = req.body.githubRepo;
+    if (req.body?.githubBranch) branch = req.body.githubBranch;
+    if (req.query?.githubToken) token = req.query.githubToken as string;
+    if (req.query?.githubRepo) repoRaw = req.query.githubRepo as string;
+    if (req.query?.githubBranch) branch = req.query.githubBranch as string;
+
+    if (!token || !token.trim()) {
+      return res.status(400).json({ success: false, message: 'GitHub PAT belum diisi di database/github.config.json' });
+    }
+
+    const cleanRepo = repoRaw.replace('https://github.com/', '').replace('.git', '').trim();
+    const cleanBranch = branch.trim() || 'main';
+
+    const treeUrl = `https://api.github.com/repos/${cleanRepo}/git/trees/${cleanBranch}?recursive=1`;
+    const treeRes = await fetch(treeUrl, {
+      headers: {
+        'Authorization': `Bearer ${token.trim()}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'LogParsingApp'
+      }
+    });
+
+    if (!treeRes.ok) {
+      const errData: any = await treeRes.json().catch(() => ({}));
+      return res.status(treeRes.status).json({
+        success: false,
+        message: `Gagal membaca tree repository GitHub: ${errData.message || treeRes.statusText}`
+      });
+    }
+
+    const treeData: any = await treeRes.json();
+    const items = treeData.tree || [];
+
+    const pulledFiles: string[] = [];
+    for (const item of items) {
+      if (item.type === 'blob' && (item.path.startsWith('templates/') || item.path.startsWith('database/'))) {
+        if (item.path === 'database/github.config.json') continue;
+
+        const contentUrl = `https://api.github.com/repos/${cleanRepo}/contents/${item.path}?ref=${cleanBranch}`;
+        const contentRes = await fetch(contentUrl, {
+          headers: {
+            'Authorization': `Bearer ${token.trim()}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'LogParsingApp'
+          }
+        });
+
+        if (contentRes.ok) {
+          const fileInfo: any = await contentRes.json();
+          if (fileInfo.content) {
+            const rawText = Buffer.from(fileInfo.content, 'base64').toString('utf-8');
+            const targetDiskPath = path.join(process.cwd(), item.path);
+            fs.mkdirSync(path.dirname(targetDiskPath), { recursive: true });
+            fs.writeFileSync(targetDiskPath, rawText, 'utf-8');
+            pulledFiles.push(item.path);
+          }
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Berhasil menarik (pull sync) ${pulledFiles.length} file dari GitHub (${cleanRepo}:${cleanBranch})!`,
+      count: pulledFiles.length,
+      pulledFiles
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 app.get('/api/templates', (req, res) => {
   try {
     const baseDir = getTemplatesDir();

@@ -1481,6 +1481,46 @@ function TemplatesTab({
   const [tempBranch, setTempBranch] = useState(githubBranch);
   const [tempAutoSync, setTempAutoSync] = useState(githubAutoSync);
 
+  // Pull / Sync latest templates & database files from GitHub repository to local disk
+  const syncPullFromGitHub = async (showNotification = true) => {
+    if (showNotification) {
+      setGithubSyncStatus({ loading: true, type: null, message: 'Menarik (pull sync) file terbaru dari GitHub repository...' });
+    }
+    try {
+      const res = await fetch('/api/github-sync-pull', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        if (showNotification) {
+          setGithubSyncStatus({
+            loading: false,
+            type: 'success',
+            message: data.message || `Berhasil sync ${data.count} file dari GitHub!`
+          });
+        }
+        await fetchTemplates();
+        return true;
+      } else {
+        if (showNotification) {
+          setGithubSyncStatus({
+            loading: false,
+            type: 'error',
+            message: data.message || 'Gagal menarik data dari GitHub.'
+          });
+        }
+        return false;
+      }
+    } catch (err: any) {
+      if (showNotification) {
+        setGithubSyncStatus({
+          loading: false,
+          type: 'error',
+          message: `Error pull sync: ${err.message}`
+        });
+      }
+      return false;
+    }
+  };
+
   // Auto load central GitHub configuration from server (/api/github-config) on mount
   useEffect(() => {
     const loadCentralGithubConfig = async () => {
@@ -1508,6 +1548,10 @@ function TemplatesTab({
             setGithubAutoSync(cfg.githubAutoSync);
             setTempAutoSync(cfg.githubAutoSync);
             localStorage.setItem('github_autosync', cfg.githubAutoSync ? 'true' : 'false');
+          }
+          // Auto pull templates from GitHub if token is set
+          if (cfg.githubToken && cfg.githubToken.trim()) {
+            await syncPullFromGitHub(false);
           }
         }
       } catch (err) {
@@ -1836,6 +1880,18 @@ function TemplatesTab({
         </div>
 
         <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+          {isGithubConfigured && (
+            <button
+              onClick={() => syncPullFromGitHub(true)}
+              disabled={githubSyncStatus.loading}
+              className="px-3 py-1.5 bg-emerald-950/80 border border-emerald-700/60 hover:bg-emerald-900/80 text-emerald-300 disabled:opacity-50 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow"
+              title="Tarik (Pull) template & data terbaru dari GitHub ke server"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${githubSyncStatus.loading ? 'animate-spin' : ''}`} />
+              Pull from GitHub
+            </button>
+          )}
+
           {activeTemplate && isGithubConfigured && (
             <button
               onClick={() => commitTemplateToGitHub(activeTemplate.instansi, activeTemplate.name, activeTemplate.content)}
