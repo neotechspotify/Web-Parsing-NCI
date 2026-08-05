@@ -34,17 +34,16 @@ Payload :
 {payload}
 ===============================
 
-Event ini terjadi karena IP Source terdeteksi melakukan akses ke halaman /public/phpinfo.php pada web server. 
-Aktivitas ini dapat mengindikasikan adanya upaya reconnaissance atau pemindaian terhadap aplikasi web untuk mengidentifikasi 
-informasi konfigurasi PHP pada server.
+Terdeteksi percobaan akses ke endpoint /phpinfo.php pada web server melalui metode HTTP GET. File phpinfo.php merupakan halaman diagnostik PHP yang dapat menampilkan informasi konfigurasi server, seperti versi PHP, modul yang aktif, path aplikasi, dan konfigurasi sistem. Aktivitas ini umumnya merupakan bagian dari reconnaissance untuk mengidentifikasi informasi yang dapat dimanfaatkan pada tahap eksploitasi berikutnya.
 
 ===============================
 
 Mitigasi :
-- Lakukan Bloking jika IP public terdeteksi sebagai bad reputation.
-- Verifikasi akses ke path {payload} merupakan bagian dari aktivitas yang sah, seperti proses administrasi, pengujian aplikasi, atau troubleshooting oleh pihak yang berwenang.
-- Batasi akses ke halaman diagnostik seperti {payload} hanya untuk administrator atau jaringan internal menggunakan mekanisme autentikasi, ACL, atau firewall.
-- Lakukan monitoring terhadap log web server untuk memastikan tidak terdapat upaya akses ke resource sensitif atau aktivitas reconnaissance lanjutan.
+- Verifikasi apakah file phpinfo.php masih tersedia dan dapat diakses dari jaringan publik.
+- Hapus atau nonaktifkan file phpinfo.php pada lingkungan produksi apabila tidak diperlukan.
+- Batasi akses ke halaman diagnostik hanya untuk administrator atau jaringan internal.
+- Tinjau log web server untuk memastikan respons terhadap permintaan tersebut dan mendeteksi adanya aktivitas lanjutan dari alamat IP sumber.
+- Terapkan aturan pada WAF atau IDS/IPS untuk memblokir atau memonitor akses ke file diagnostik dan endpoint sensitif guna mencegah upaya reconnaissance lebih lanjut.
 ===============================
 
 Terimakasih,
