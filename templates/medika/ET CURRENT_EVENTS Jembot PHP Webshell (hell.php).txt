@@ -1,0 +1,52 @@
+Dear Team MEDIKA,
+
+Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
+
+===============================
+
+No Tiket : {ticket_id}
+Sec. Event : {event_type}
+Signature : {event_name}
+Log Source : Suricata
+Severity : {severity}
+Action : {action}
+Waktu Deteksi : {tanggal} {waktu}
+
+===============================
+
+Deskripsi Event :
+Tim SOC mendeteksi adanya permintaan HTTP yang mencoba mengakses atau mengunggah skrip PHP Webshell spesifik (Jembot Webshell / hell.php). Aktivitas ini merupakan indikasi kuat upaya penyerang untuk menanamkan atau mengaktifkan backdoor webshell pada server web internal guna menguasai sistem secara penuh.
+
+Source IP :
+{src_ip}
+
+Source IP Country :
+{src_country}
+
+Destination IP :
+{dst_ip}
+
+Destination Port :
+{dst_port}
+
+URL : 
+{url}
+===============================
+
+Terdeteksi percobaan akses ke beberapa file PHP melalui metode HTTP GET, termasuk /hell.php yang merupakan indikator pada signature ET CURRENT_EVENTS Jembot PHP Webshell. Aktivitas ini mengindikasikan upaya reconnaissance untuk mencari atau memverifikasi keberadaan web shell maupun file PHP yang berpotensi memberikan akses tidak sah ke web server sebagai bagian dari tahapan eksploitasi.
+
+===============================
+
+Mitigasi :
+- Lakukan inspeksi langsung pada direktori web root server target untuk memeriksa keberadaan file hell.php, help.php, java.php, _query.php, db_cts.php, db_pma.php, log.php, atau file mencurigakan lainnya.
+- Hapus file webshell jika ditemukan dan kaji ulang izin hak akses direktori (file permissions).
+- Periksa log akses web server untuk mengetahui kapan dan bagaimana file tersebut diunggah/diakses.
+- Blokir IP penyerang pada firewall/EDL dan tingkatkan keamanan aplikasi web.
+- Batasi akses ke halaman diagnostik hanya untuk administrator atau jaringan internal.
+- Tinjau log web server untuk memastikan respons terhadap permintaan tersebut dan mendeteksi adanya aktivitas lanjutan dari alamat IP sumber.
+- Terapkan aturan pada WAF atau IDS/IPS untuk memblokir atau memonitor akses ke file diagnostik dan endpoint sensitif guna mencegah upaya reconnaissance lebih lanjut.
+
+===============================
+
+Terimakasih,
+SOC Neotech
