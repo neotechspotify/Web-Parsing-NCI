@@ -3,8 +3,169 @@ import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
 import XLSX from 'xlsx-js-style';
+import ExcelJS from 'exceljs';
 import xml2js from 'xml2js';
 import { createServer as createViteServer } from 'vite';
+import { GoogleGenAI } from '@google/genai';
+
+async function extractSectionBFromImage(imageBuffer: Buffer, mimeType: string): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    console.warn("GEMINI_API_KEY environment variable is missing.");
+    return "";
+  }
+
+  try {
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build'
+        }
+      }
+    });
+
+    const base64Data = imageBuffer.toString('base64');
+    const imagePart = {
+      inlineData: {
+        mimeType: mimeType || 'image/png',
+        data: base64Data
+      }
+    };
+
+    const textPart = {
+      text: `buatkan list dari gambar ini
+
+Petunjuk Khusus untuk Analis SOC SIEM:
+Analisis gambar dashboard SIEM ini (heatmap / matriks / tabel Destination IP & Count of Hits & Port).
+Ekstrak secara presisi semua Destination IP, Total Hits (wajib dibaca dari kolom "Count of Hits" pada tabel di gambar, contoh: 51,810 atau 8,529 atau 5,017 atau 1,917), serta rincian Port beserta jumlah hits per port dari gambar.
+
+Format output WAJIB persis seperti contoh berikut:
+
+1. Destination IP: [IP] (Total Hits: [Hits dari tabel])
+Port [Port] : [Hits]
+Port [Port] : [Hits]
+
+2. Destination IP: [IP] (Total Hits: [Hits dari tabel])
+Port [Port] : [Hits]
+
+Aturan:
+1. Hanya keluarkan teks daftar tanpa judul "B. Destination IP & Port Detected:", tanpa kata sambutan, dan tanpa markdown codeblock (\`\`\`).
+2. Pastikan nilai Total Hits diambil LANGSUNG dari nilai "Count of Hits" pada tabel gambar (misalnya 172.16.1.17 mempunyai Total Hits: 5,017).
+3. Urutkan Destination IP sesuai daftar di gambar.`
+    };
+
+    let text = "";
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.6-flash",
+        contents: { parts: [imagePart, textPart] }
+      });
+      text = response.text ? response.text.trim() : "";
+    } catch (e1: any) {
+      console.warn("gemini-3.6-flash failed in extractSectionBFromImage, trying gemini-flash-latest:", e1.message);
+      try {
+        const response2 = await ai.models.generateContent({
+          model: "gemini-flash-latest",
+          contents: { parts: [imagePart, textPart] }
+        });
+        text = response2.text ? response2.text.trim() : "";
+      } catch (e2: any) {
+        console.error("All Gemini Vision models failed:", e2.message);
+      }
+    }
+
+    text = text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+    return text;
+  } catch (err: any) {
+    console.error("Gemini Vision OCR error:", err);
+    return "";
+  }
+}
+
+function extractEventName(e: any): string {
+  if (!e) return "";
+  if (e.event_name) {
+    const clean = String(e.event_name).trim().replace(/^"|"$/g, '');
+    if (clean && clean !== '-' && clean.toLowerCase() !== 'suricata' && clean.toLowerCase() !== 'qradar' && clean.toLowerCase() !== 'misc attack' && clean.toLowerCase() !== 'offenses' && clean.toLowerCase() !== 'offensess') {
+      return clean;
+    }
+  }
+  if (e.event_type) {
+    const cleanType = String(e.event_type).trim().replace(/^"|"$/g, '');
+    if (cleanType && cleanType !== '-' && cleanType.toLowerCase() !== 'offenses' && cleanType.toLowerCase() !== 'offensess' && cleanType.toLowerCase() !== 'log activity' && cleanType.toLowerCase() !== 'suricata' && cleanType.toLowerCase() !== 'qradar' && cleanType.toLowerCase() !== 'misc attack' && cleanType.toLowerCase() !== 'misc activity') {
+      return cleanType;
+    }
+  }
+  if (e._rawLine) {
+    const etMatch = String(e._rawLine).match(/\b(ET\s+[A-Za-z0-9_\-\.\s\(\)\*\/:]+?)(?=\t|\s{2,}|$|"|M1|M2|M3|M4|M5|Low|Medium|High|Critical)/i);
+    if (etMatch && etMatch[1].trim().length > 5) {
+      return etMatch[1].trim();
+    }
+  }
+  if (e.description) {
+    const cleanDesc = String(e.description).trim().replace(/^"|"$/g, '');
+    if (cleanDesc && cleanDesc !== '-') return cleanDesc;
+  }
+  return String(e.event_name || e.event_type || "").trim().replace(/^"|"$/g, '');
+}
+
+function buildDestinationIpPortsFromEvents(data: any[]): string {
+  if (!data || data.length === 0) return "Tidak ada data Destination IP & Port detected";
+
+  const ipMap: Record<string, { totalHits: number; ports: Record<string, number> }> = {};
+
+  for (const item of data) {
+    const rawIpStr = String(item.dst_ip || item.destinationIP || item.destination_ip || '').replace(/<br\s*\/?>/gi, '\n');
+    const rawPortStr = String(item.dst_port || item.destinationPort || item.destination_port || '').replace(/<br\s*\/?>/gi, '\n');
+
+    const ips = rawIpStr.split(/[\r\n,\s]+/).map(s => s.trim().replace(/^"|"$/g, '')).filter(s => /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(s));
+    const ports = rawPortStr.split(/[\r\n,\s]+/).map(s => s.trim().replace(/^"|"$/g, '')).filter(s => /^\d+$/.test(s));
+
+    if (ips.length === 0) continue;
+
+    for (const ip of ips) {
+      if (!ipMap[ip]) {
+        ipMap[ip] = { totalHits: 0, ports: {} };
+      }
+      ipMap[ip].totalHits++;
+
+      if (ports.length > 0) {
+        for (const p of ports) {
+          ipMap[ip].ports[p] = (ipMap[ip].ports[p] || 0) + 1;
+        }
+      } else {
+        ipMap[ip].ports["-"] = (ipMap[ip].ports["-"] || 0) + 1;
+      }
+    }
+  }
+
+  const ipEntries = Object.entries(ipMap);
+  if (ipEntries.length === 0) return "Tidak ada data Destination IP & Port detected";
+
+  ipEntries.sort((a, b) => {
+    const numA = a[0].split('.').map(n => parseInt(n, 10));
+    const numB = b[0].split('.').map(n => parseInt(n, 10));
+    for (let i = 0; i < 4; i++) {
+      if (numA[i] !== numB[i]) return numA[i] - numB[i];
+    }
+    return 0;
+  });
+
+  const lines: string[] = [];
+  ipEntries.forEach(([ip, info], idx) => {
+    lines.push(`${idx + 1}. Destination IP: ${ip} (Total Hits: ${info.totalHits})`);
+    const portEntries = Object.entries(info.ports);
+    for (const [p, hits] of portEntries) {
+      lines.push(`Port ${p} : ${hits}`);
+    }
+    if (idx < ipEntries.length - 1) {
+      lines.push("");
+    }
+  });
+
+  return lines.join("\n").trim();
+}
 
 // Ensure required directories exist (skip on Vercel to avoid EROFS error on read-only system)
 if (!process.env.VERCEL) {
@@ -162,169 +323,211 @@ function styleRawSheet(worksheet: XLSX.WorkSheet, data: any[]) {
   }
 }
 
-// Helper to create a beautifully styled Pivot Table worksheet
-function createStyledPivotSheet(aalPivotData: any[], totalCount: number, valueColName: string = "source.ip"): XLSX.WorkSheet {
-  const pivotAOA: any[][] = [];
-  pivotAOA.push([]); // blank row 1
-  pivotAOA.push([]); // blank row 2
-  pivotAOA.push(["Row Labels", `Count of ${valueColName}`]); // row 3
+// Helper to create native Excel Pivot Table with row outlines ([1][2] and [+] / [-] buttons) and AutoFilter dropdowns
+async function generateAalExcelWithExcelJS(
+  filePath: string,
+  aalPivotData: any[],
+  parsedData: any[],
+  totalCount: number,
+  valueColName: string = "source.ip",
+  rawSheetName: string = "Raw Data"
+): Promise<void> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Cybersecurity Team';
 
-  const rowStyles: Array<{
-    type: 'header' | 'group' | 'item' | 'total';
-    ip?: string;
-    domain?: string;
-  }> = [
-    { type: 'header' }, // dummy for row 1
-    { type: 'header' }, // dummy for row 2
-    { type: 'header' }, // header on row 3
-  ];
+  // ==========================================
+  // SHEET 1: "Source IP Detected" (Pivot View with Outlines & AutoFilter)
+  // ==========================================
+  const pivotSheet = workbook.addWorksheet("Source IP Detected", {
+    views: [{ showGridLines: true }],
+    properties: {
+      outlineProperties: {
+        summaryBelow: false, // Ensures summary/IP row sits above detail rows with [+] button on IP row
+        summaryRight: false
+      }
+    }
+  });
+
+  // Rows 1 & 2: Blank spacing
+  pivotSheet.addRow([]);
+  pivotSheet.addRow([]);
+
+  // Row 3: Header Row ("Row Labels", "Count of botnetdomain")
+  const headerRow = pivotSheet.addRow(["Row Labels", `Count of ${valueColName}`]);
+  headerRow.height = 24;
+
+  const pivotHeaderFill: ExcelJS.Fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FFDCE6F1' } // Soft pivot blue #DCE6F1
+  };
+  const pivotHeaderFont: Partial<ExcelJS.Font> = {
+    bold: true,
+    color: { argb: 'FF000000' },
+    name: 'Calibri',
+    size: 11
+  };
+  const thinBorder: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin', color: { argb: 'FFD9D9D9' } },
+    bottom: { style: 'thin', color: { argb: 'FFD9D9D9' } },
+    left: { style: 'thin', color: { argb: 'FFD9D9D9' } },
+    right: { style: 'thin', color: { argb: 'FFD9D9D9' } }
+  };
+
+  headerRow.getCell(1).fill = pivotHeaderFill;
+  headerRow.getCell(1).font = pivotHeaderFont;
+  headerRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+  headerRow.getCell(1).border = thinBorder;
+
+  headerRow.getCell(2).fill = pivotHeaderFill;
+  headerRow.getCell(2).font = pivotHeaderFont;
+  headerRow.getCell(2).alignment = { horizontal: 'right', vertical: 'middle' };
+  headerRow.getCell(2).border = thinBorder;
+
+  let currentRowIdx = 3;
 
   aalPivotData.forEach(group => {
-    pivotAOA.push([group.ip, group.subtotal]);
-    rowStyles.push({ type: 'group', ip: group.ip });
-    
-    group.domains.forEach(d => {
-      // Intended for standard Pivot style indent representation
-      pivotAOA.push([`  ${d.domain}`, d.count]);
-      rowStyles.push({ type: 'item', domain: d.domain });
+    // Parent IP Row (level 0)
+    const ipRow = pivotSheet.addRow([group.ip, group.subtotal]);
+    currentRowIdx++;
+    ipRow.height = 20;
+    ipRow.outlineLevel = 0;
+
+    const ipFont: Partial<ExcelJS.Font> = {
+      bold: true,
+      color: { argb: 'FF000000' },
+      name: 'Calibri',
+      size: 11
+    };
+
+    ipRow.getCell(1).font = ipFont;
+    ipRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+    ipRow.getCell(1).border = thinBorder;
+
+    ipRow.getCell(2).font = ipFont;
+    ipRow.getCell(2).alignment = { horizontal: 'right', vertical: 'middle' };
+    ipRow.getCell(2).border = thinBorder;
+    ipRow.getCell(2).numFmt = '#,##0';
+
+    // Child Domain Rows (level 1, hidden by default so [+] button appears on IP row)
+    group.domains.forEach((d: any) => {
+      const domainRow = pivotSheet.addRow([d.domain, d.count]);
+      currentRowIdx++;
+      domainRow.height = 18;
+      domainRow.outlineLevel = 1;
+      domainRow.hidden = true; // Enables [+] expand button in Excel
+
+      domainRow.getCell(1).font = { name: 'Calibri', size: 11, color: { argb: 'FF000000' } };
+      domainRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle', indent: 2 };
+      domainRow.getCell(1).border = thinBorder;
+
+      domainRow.getCell(2).font = { name: 'Calibri', size: 11, color: { argb: 'FF000000' } };
+      domainRow.getCell(2).alignment = { horizontal: 'right', vertical: 'middle' };
+      domainRow.getCell(2).border = thinBorder;
+      domainRow.getCell(2).numFmt = '#,##0';
     });
   });
 
-  pivotAOA.push(["Grand Total", totalCount]);
-  rowStyles.push({ type: 'total' });
+  // Grand Total Row
+  const totalRow = pivotSheet.addRow(["Grand Total", totalCount]);
+  currentRowIdx++;
+  totalRow.height = 22;
+  totalRow.outlineLevel = 0;
 
-  const sheet = XLSX.utils.aoa_to_sheet(pivotAOA);
+  const doubleBottomBorder: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin', color: { argb: 'FFD9D9D9' } },
+    bottom: { style: 'double', color: { argb: 'FF333333' } },
+    left: { style: 'thin', color: { argb: 'FFD9D9D9' } },
+    right: { style: 'thin', color: { argb: 'FFD9D9D9' } }
+  };
 
-  // Apply custom Excel Pivot Styles
-  for (let r = 0; r < pivotAOA.length; r++) {
-    const rowNum = r + 1; // 1-based index in Excel
-    const styleInfo = rowStyles[r];
-    if (!styleInfo) continue;
+  totalRow.getCell(1).fill = pivotHeaderFill;
+  totalRow.getCell(1).font = pivotHeaderFont;
+  totalRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+  totalRow.getCell(1).border = doubleBottomBorder;
 
-    const cellA_key = `A${rowNum}`;
-    const cellB_key = `B${rowNum}`;
+  totalRow.getCell(2).fill = pivotHeaderFill;
+  totalRow.getCell(2).font = pivotHeaderFont;
+  totalRow.getCell(2).alignment = { horizontal: 'right', vertical: 'middle' };
+  totalRow.getCell(2).border = doubleBottomBorder;
+  totalRow.getCell(2).numFmt = '#,##0';
 
-    const cellA = sheet[cellA_key];
-    const cellB = sheet[cellB_key];
+  pivotSheet.getColumn(1).width = 38;
+  pivotSheet.getColumn(2).width = 24;
 
-    if (!cellA && !cellB) continue;
+  // AutoFilter dropdown arrow on Row Labels & Count headers (row 3)
+  pivotSheet.autoFilter = {
+    from: { row: 3, column: 1 },
+    to: { row: currentRowIdx, column: 2 }
+  };
 
-    const thinBorder = { style: 'thin', color: { rgb: 'D9D9D9' } };
-    const doubleBorder = { style: 'double', color: { rgb: '333333' } };
 
-    if (styleInfo.type === 'header') {
-      if (rowNum === 3) {
-        if (cellA) {
-          cellA.s = {
-            font: { bold: true, name: 'Calibri', sz: 11, color: { rgb: '000000' } },
-            fill: { patternType: 'solid', fgColor: { rgb: 'DCE6F1' } },
-            border: {
-              top: thinBorder,
-              bottom: thinBorder,
-              left: thinBorder,
-              right: thinBorder
-            },
-            alignment: { horizontal: 'left', vertical: 'center' }
-          };
-        }
-        if (cellB) {
-          cellB.s = {
-            font: { bold: true, name: 'Calibri', sz: 11, color: { rgb: '000000' } },
-            fill: { patternType: 'solid', fgColor: { rgb: 'DCE6F1' } },
-            border: {
-              top: thinBorder,
-              bottom: thinBorder,
-              left: thinBorder,
-              right: thinBorder
-            },
-            alignment: { horizontal: 'right', vertical: 'center' }
-          };
-        }
-      }
-    } else if (styleInfo.type === 'group') {
-      if (cellA) {
-        cellA.s = {
-          font: { bold: true, name: 'Calibri', sz: 11 },
-          alignment: { horizontal: 'left', vertical: 'center' },
-          border: {
-            top: thinBorder,
-            bottom: thinBorder,
-            left: thinBorder,
-            right: thinBorder
-          }
-        };
-      }
-      if (cellB) {
-        cellB.s = {
-          font: { bold: true, name: 'Calibri', sz: 11 },
-          alignment: { horizontal: 'right', vertical: 'center' },
-          border: {
-            top: thinBorder,
-            bottom: thinBorder,
-            left: thinBorder,
-            right: thinBorder
-          }
-        };
-      }
-    } else if (styleInfo.type === 'item') {
-      if (cellA) {
-        cellA.s = {
-          font: { name: 'Calibri', sz: 11 },
-          alignment: { horizontal: 'left', vertical: 'center' },
-          border: {
-            left: thinBorder,
-            right: thinBorder
-          }
-        };
-      }
-      if (cellB) {
-        cellB.s = {
-          font: { name: 'Calibri', sz: 11 },
-          alignment: { horizontal: 'right', vertical: 'center' },
-          border: {
-            left: thinBorder,
-            right: thinBorder
-          }
-        };
-      }
-    } else if (styleInfo.type === 'total') {
-      const bgTotalColor = 'DCE6F1';
-      if (cellA) {
-        cellA.s = {
-          font: { bold: true, name: 'Calibri', sz: 11 },
-          fill: { patternType: 'solid', fgColor: { rgb: bgTotalColor } },
-          border: {
-            top: thinBorder,
-            bottom: doubleBorder,
-            left: thinBorder,
-            right: thinBorder
-          },
-          alignment: { horizontal: 'left', vertical: 'center' }
-        };
-      }
-      if (cellB) {
-        cellB.s = {
-          font: { bold: true, name: 'Calibri', sz: 11 },
-          fill: { patternType: 'solid', fgColor: { rgb: bgTotalColor } },
-          border: {
-            top: thinBorder,
-            bottom: doubleBorder,
-            left: thinBorder,
-            right: thinBorder
-          },
-          alignment: { horizontal: 'right', vertical: 'center' }
-        };
-      }
-    }
+  // ==========================================
+  // SHEET 2: Raw Log Data (Exact Table Style Medium 7 Green)
+  // ==========================================
+  const rawSheet = workbook.addWorksheet(rawSheetName, {
+    views: [{ showGridLines: true }]
+  });
+
+  if (parsedData && parsedData.length > 0) {
+    const keys = Object.keys(parsedData[0]);
+    
+    // Header Row 1
+    const rawHeaderRow = rawSheet.addRow(keys);
+    rawHeaderRow.height = 24;
+
+    const rawHeaderFill: ExcelJS.Fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF76933C' } // Table Style Medium 7 Green #76933C
+    };
+
+    rawHeaderRow.eachCell((cell) => {
+      cell.fill = rawHeaderFill;
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, name: 'Calibri', size: 11 };
+      cell.alignment = { horizontal: 'left', vertical: 'middle' };
+      cell.border = thinBorder;
+    });
+
+    // Data Rows with alternating background #E2EFDA and #FFFFFF
+    parsedData.forEach((item, idx) => {
+      const rowValues = keys.map(k => item[k]);
+      const dataRow = rawSheet.addRow(rowValues);
+      dataRow.height = 18;
+
+      const isAlternate = (idx % 2 === 1);
+      const rowFill: ExcelJS.Fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: isAlternate ? 'FFE2EFDA' : 'FFFFFFFF' }
+      };
+
+      dataRow.eachCell((cell) => {
+        cell.fill = rowFill;
+        cell.font = { name: 'Calibri', size: 11, color: { argb: 'FF000000' } };
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        cell.border = thinBorder;
+      });
+    });
+
+    // Auto-fit column widths
+    keys.forEach((key, colIdx) => {
+      let maxLen = key.length;
+      parsedData.forEach(row => {
+        const valStr = String(row[key] || '');
+        if (valStr.length > maxLen) maxLen = valStr.length;
+      });
+      rawSheet.getColumn(colIdx + 1).width = Math.min(Math.max(maxLen + 4, 12), 60);
+    });
+
+    // AutoFilter on raw data header
+    rawSheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: parsedData.length + 1, column: keys.length }
+    };
   }
 
-  // Set column widths
-  sheet['!cols'] = [
-    { wch: 32 }, // Row Labels width
-    { wch: 22 }  // Count width
-  ];
-
-  return sheet;
+  await workbook.xlsx.writeFile(filePath);
 }
 
 export const app = express();
@@ -719,6 +922,18 @@ function applyHeuristicCorrections(eventData: any, rawLine: string, instansi: st
       corrected.dst_port = verticalize(parts[23]);
       corrected.dst_country = parts[24] || '-';
       corrected.dst_desc = parts[24] || '-';
+    }
+
+    // Preserve specific alert name in event_name before event_type is overwritten
+    if (!corrected.event_name || corrected.event_name === '-' || corrected.event_name.toLowerCase() === 'suricata' || corrected.event_name.toLowerCase() === 'misc attack') {
+      if (corrected.event_type && corrected.event_type !== '-' && corrected.event_type.toLowerCase() !== 'suricata' && corrected.event_type.toLowerCase() !== 'offenses' && corrected.event_type.toLowerCase() !== 'misc attack') {
+        corrected.event_name = corrected.event_type;
+      } else if (rawLine) {
+        const etMatch = rawLine.match(/\b(ET\s+[A-Za-z0-9_\-\.\s\(\)\*\/:]+?)(?=\t|\s{2,}|$|"|M1|M2|M3|M4|M5|Low|Medium|High|Critical)/i);
+        if (etMatch && etMatch[1].trim().length > 5) {
+          corrected.event_name = etMatch[1].trim();
+        }
+      }
     }
 
     // Force "Misc Attack" and "Allowed" for Suricata/CINS/Spamhaus/Dshield events
@@ -1189,8 +1404,20 @@ function preprocessMultilineLog(text: string): string {
 function parseTxtContent(content: string): any[] {
   const parsedEvents: any[] = [];
   try {
-    const rows = parseTSV(content);
-    for (const row of rows) {
+    const rawRows = parseTSV(content);
+    for (let row of rawRows) {
+      if (row.length <= 3 && row.length > 0 && row[0].trim().length > 0) {
+        // Fallback for space-separated pasted text
+        const lineStr = row[0];
+        let spaceParts = lineStr.split(/\t| {2,}/).map(s => s.trim()).filter(s => s.length > 0);
+        if (spaceParts.length <= 3) {
+          spaceParts = lineStr.split(/\s+/).map(s => s.trim()).filter(s => s.length > 0);
+        }
+        if (spaceParts.length > 3) {
+          row = spaceParts;
+        }
+      }
+
       if (row.length <= 3) continue;
 
       const getPart = (idx: number) => {
@@ -2418,24 +2645,49 @@ app.post('/api/buat_event', (req, res) => {
   }
 });
 
+// Standalone endpoint to parse SIEM screenshot image using Gemini Vision OCR
+app.post('/api/parse-screenshot', upload.single('image_file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'File screenshot (image_file) tidak ditemukan' });
+    }
+    const extractedText = await extractSectionBFromImage(
+      req.file.buffer || fs.readFileSync(req.file.path),
+      req.file.mimetype
+    );
+    return res.json({ success: true, text: extractedText });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // XML / TSV Parsing main upload endpoint
-app.post('/api/process', upload.single('file'), async (req, res, next) => {
+app.post('/api/process', upload.any(), async (req, res, next) => {
   const processLog: string[] = [];
   const resultFiles: any[] = [];
   let instansi = '';
   let shift = '';
-  let file: any = undefined;
+  let medikaPivotData: any = null;
+  let sectionBText: string = '';
+  let file: any = null;
+  let imageFile: any = null;
 
   try {
-    instansi = req.body.instansi || '';
+    const filesList = (req.files as Express.Multer.File[]) || [];
+    file = filesList.find(f => f.fieldname === 'file' || f.fieldname === 'log_file');
+    if (!file && filesList.length > 0 && filesList[0].fieldname !== 'image_file' && filesList[0].fieldname !== 'screenshot') {
+      file = filesList[0];
+    }
+    imageFile = filesList.find(f => f.fieldname === 'image_file' || f.fieldname === 'screenshot');
+
+    instansi = req.body?.instansi || '';
     shift = req.body.shift || '';
     const { paste_text } = req.body;
-    file = req.file;
 
     if (!instansi || !shift) {
       return res.status(400).json({ error: 'Instansi and shift are required' });
     }
-    if (!file && !paste_text) {
+    if (!file && !paste_text && !imageFile) {
       return res.status(400).json({ error: 'Log or XML file must be uploaded or log text must be pasted' });
     }
 
@@ -2443,8 +2695,11 @@ app.post('/api/process', upload.single('file'), async (req, res, next) => {
     processLog.push(`🕐 Shift: ${shift}`);
     if (file) {
       processLog.push(`📥 File diterima: ${file.originalname}`);
-    } else {
+    } else if (paste_text) {
       processLog.push(`📥 Teks log langsung diterima (Pasted Text)`);
+    }
+    if (imageFile) {
+      processLog.push(`🖼️ Screenshot Dashboard SIEM diterima: ${imageFile.originalname}`);
     }
 
     const fileExt = file ? file.originalname.split('.').pop()?.toLowerCase() : 'txt';
@@ -2549,25 +2804,16 @@ app.post('/api/process', upload.single('file'), async (req, res, next) => {
       const shiftOutdir = cleanShiftFolder(outputDir, shift);
       const excelFilePath = path.join(shiftOutdir, excelFileName);
 
-      // Create Worksheet 1: Sheet1 (PivotTable)
-      const pivotSheet = createStyledPivotSheet(aalPivotData, totalCount, isDga ? 'url' : 'botnetdomain');
-
-      // Create Worksheet 2: Raw Data
-      const rawSheet = XLSX.utils.json_to_sheet(parsedData);
-      
-      // Auto fit columns, style header, and add auto filter
-      autoFitJsonColumns(rawSheet, parsedData);
-      styleRawSheet(rawSheet, parsedData);
-      addAutoFilter(rawSheet, parsedData);
-
-      const workbook = XLSX.utils.book_new();
-      
-      // Append pivot sheet first so it is on the left and selected by default (matching Image 2 layout)
-      XLSX.utils.book_append_sheet(workbook, pivotSheet, "Source IP Detected");
+      // Create Excel workbook with native Pivot Table outlines ([1][2] and [+] / [-] buttons), AutoFilter dropdowns, and exact Raw Log Green Table Style
       const rawSheetName = isDga ? "Raw Log DGA Connection" : "Raw Log Botnet C&C";
-      XLSX.utils.book_append_sheet(workbook, rawSheet, rawSheetName);
-
-      XLSX.writeFile(workbook, excelFilePath);
+      await generateAalExcelWithExcelJS(
+        excelFilePath,
+        aalPivotData,
+        parsedData,
+        totalCount,
+        isDga ? 'url' : 'botnetdomain',
+        rawSheetName
+      );
 
       resultFiles.push({
         name: excelFileName,
@@ -2720,9 +2966,13 @@ Regards, SOC Neotech`;
       });
     }
 
-    if (fileExt === 'txt') {
+    const isTxtFile = Boolean(file && (fileExt === 'txt' || file.originalname.toLowerCase().endsWith('.txt')));
+    const hasTextContent = Boolean(isTxtFile || (paste_text && paste_text.trim().length > 0));
+    const hasXmlFile = Boolean(file && (fileExt === 'xml' || file.originalname.toLowerCase().endsWith('.xml')));
+
+    if (hasTextContent) {
       if (instansi.toLowerCase() === 'sophos') {
-        const rawContent = file ? fs.readFileSync(file.path, 'utf-8') : (paste_text || '');
+        const rawContent = isTxtFile ? fs.readFileSync(file.path, 'utf-8') : (paste_text || '');
         const shiftOutdir = cleanShiftFolder(outputDir, shift);
 
         const lowerRaw = rawContent.toLowerCase();
@@ -2900,7 +3150,7 @@ SOC Neotech`;
           processLog.push(`💬 WA Report successfully created: ${waFileName}`);
         }
       } else {
-        const rawEvents = file ? parseTxtFile(file.path) : parseTxtContent(paste_text || '');
+        const rawEvents = isTxtFile ? parseTxtFile(file.path) : parseTxtContent(paste_text || '');
         const events = rawEvents.map(e => {
           const lineText = e._rawLine || '';
           return applyHeuristicCorrections(e, lineText, instansi);
@@ -2920,6 +3170,33 @@ SOC Neotech`;
           ? ["log activity", "offensess", "offenses", "suricata", "misc attack", "attempted information leak", "information leak", "misc activity"]
           : ["log activity", "offensess", "offenses"];
 
+        medikaPivotData = null;
+        sectionBText = "";
+
+        if (isMedika && events.length > 0) {
+          const destIpCounts: Record<string, number> = {};
+          let destIpGrandTotal = 0;
+
+          for (const e of events) {
+            if (!e.dst_ip) continue;
+            const rawStr = String(e.dst_ip || '').replace(/<br\s*\/?>/gi, '\n');
+            const rawIps = Array.isArray(e.dst_ip) ? e.dst_ip : rawStr.split(/[\r\n,\s]+/);
+            for (const rawIp of rawIps) {
+              const cleanIp = String(rawIp || '').trim().replace(/^"|"$/g, '').replace(/<[^>]*>/g, '').trim();
+              if (cleanIp && /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(cleanIp)) {
+                destIpCounts[cleanIp] = (destIpCounts[cleanIp] || 0) + 1;
+                destIpGrandTotal++;
+              }
+            }
+          }
+
+          const medikaPivotRows = Object.entries(destIpCounts).map(([ip, count]) => ({ ip, count }));
+          medikaPivotData = {
+            rows: medikaPivotRows,
+            grandTotal: destIpGrandTotal
+          };
+        }
+
         const offenses = events.filter(e => {
           const type = (e.event_type || '').trim().toLowerCase();
           return type === 'offensess' || type === 'offenses';
@@ -2930,22 +3207,29 @@ SOC Neotech`;
         });
 
         for (const eventData of events) {
-          const eventName = (eventData.event_name || "").trim().replace(/^"|"$/g, '');
+          const eventName = extractEventName(eventData);
           const ticketId = (eventData.ticket_id || "").trim();
           const eventType = (eventData.event_type || "").trim();
 
-          const isMatched = validTypes.some(vt => vt.toLowerCase() === eventType.toLowerCase());
-          if (!ticketId || !isMatched) continue;
+          if (!eventName && !ticketId) continue;
+
+          const isMatched = isMedika ? true : validTypes.some(vt => vt.toLowerCase() === eventType.toLowerCase());
+          if (!isMatched) continue;
 
           const uniqueKey = `${eventName}_${ticketId}_${eventType}`;
           if (processedEventNames.has(uniqueKey)) continue;
 
-          const templateFile = path.join(getTemplatesDir(), instansi, `${eventName}.txt`);
-          if (fs.existsSync(templateFile)) {
-            const templateContent = fs.readFileSync(templateFile, 'utf-8');
+          let matchedFile = findTemplateFile(instansi, eventName);
+          if (!matchedFile) {
+            matchedFile = path.join(getTemplatesDir(), instansi, 'event_template.txt');
+          }
+
+          if (fs.existsSync(matchedFile)) {
+            const templateContent = fs.readFileSync(matchedFile, 'utf-8');
             const filled = fillTemplate(templateContent, eventData, magMap);
 
-            const outFileName = `${eventName}_${ticketId}_${eventType}.txt`;
+            const safeEventName = eventName.replace(/[/\\?%*:|"<>]/g, '_');
+            const outFileName = `${safeEventName}_${ticketId || 'Report'}.txt`;
             const outFilePath = path.join(shiftOutdir, outFileName);
             fs.writeFileSync(outFilePath, filled, 'utf-8');
 
@@ -2981,14 +3265,14 @@ SOC Neotech`;
 
           const offensesCount: Record<string, number> = {};
           for (const e of offenses) {
-            const name = (e.event_name || "").trim().replace(/^"|"$/g, '');
+            const name = extractEventName(e);
             if (!name) continue;
             offensesCount[name] = (offensesCount[name] || 0) + 1;
           }
 
           const logsCount: Record<string, number> = {};
           for (const e of logs) {
-            const name = (e.event_name || "").trim().replace(/^"|"$/g, '');
+            const name = extractEventName(e);
             if (!name) continue;
             logsCount[name] = (logsCount[name] || 0) + 1;
           }
@@ -2996,9 +3280,8 @@ SOC Neotech`;
           const alertsCount: Record<string, number> = {};
           if (isMedika) {
             for (const e of events) {
-              const name = (e.event_name || "").trim().replace(/^"|"$/g, '');
-              const ticketId = (e.ticket_id || "").trim();
-              if (!name || !ticketId) continue;
+              const name = extractEventName(e);
+              if (!name) continue;
               alertsCount[name] = (alertsCount[name] || 0) + 1;
             }
           }
@@ -3018,8 +3301,38 @@ SOC Neotech`;
             alertsStr = Object.entries(alertsCount)
               .map(([name, count], i) => `${i + 1}. ${name} (${count} ${count > 1 ? 'events' : 'event'})`)
               .join("\n");
-            if (!alertsStr) alertsStr = "Tidak ada event terdeteksi";
           }
+          if (!alertsStr || alertsStr.trim() === "") {
+            alertsStr = offensesStr !== "Tidak ada event terdeteksi" ? offensesStr : "Tidak ada event terdeteksi";
+          }
+
+          let destinationIpPortsStr = "";
+
+          if (imageFile) {
+            processLog.push(`📷 Screenshot Dashboard SIEM terdeteksi. Menjalankan Gemini Vision OCR...`);
+            const ocrText = await extractSectionBFromImage(
+              imageFile.buffer || (imageFile.path ? fs.readFileSync(imageFile.path) : Buffer.from([])),
+              imageFile.mimetype || 'image/png'
+            );
+            if (ocrText) {
+              destinationIpPortsStr = ocrText;
+              processLog.push(`✅ Berhasil membaca data Destination IP & Port dari screenshot.`);
+            } else {
+              processLog.push(`⚠️ Gemini Vision OCR tidak mengembalikan hasil dari screenshot.`);
+            }
+          } else if (req.body.section_b_text && req.body.section_b_text.trim()) {
+            destinationIpPortsStr = req.body.section_b_text.trim();
+          }
+
+          if (!destinationIpPortsStr) {
+            if (isMedika && events.length > 0) {
+              destinationIpPortsStr = buildDestinationIpPortsFromEvents(events);
+            } else {
+              destinationIpPortsStr = "Tidak ada data Destination IP & Port detected";
+            }
+          }
+
+          sectionBText = destinationIpPortsStr;
 
           let waText = template
             .replace(/{salam}/g, greeting)
@@ -3027,7 +3340,8 @@ SOC Neotech`;
             .replace(/{jam}/g, jam)
             .replace(/{offenses}/g, offensesStr)
             .replace(/{log_activity}/g, logsStr)
-            .replace(/{alerts}/g, alertsStr);
+            .replace(/{alerts}/g, alertsStr)
+            .replace(/{destination_ip_ports}/g, destinationIpPortsStr);
 
           const waFileName = `wa_${instansi.toLowerCase()}_shift${shift}.txt`;
           const waFilePath = path.join(shiftOutdir, waFileName);
@@ -3045,8 +3359,71 @@ SOC Neotech`;
         } else {
           processLog.push(`⚠️ WA template not found at templates/${instansi}/wa_template_${instansi}.txt`);
         }
+
+        // Generate Pivot Table TXT and XLSX files for Medika
+        if (isMedika && medikaPivotData && medikaPivotData.rows.length > 0) {
+          // Sort IP address numerically
+          medikaPivotData.rows.sort((a: any, b: any) => {
+            const numA = a.ip.split('.').map((n: string) => parseInt(n, 10));
+            const numB = b.ip.split('.').map((n: string) => parseInt(n, 10));
+            for (let i = 0; i < 4; i++) {
+              if (numA[i] !== numB[i]) return numA[i] - numB[i];
+            }
+            return 0;
+          });
+
+          // 1. TXT Format
+          let pivotTxtContent = "Row Labels\tCount of IP DESTINATION\n";
+          for (const r of medikaPivotData.rows) {
+            pivotTxtContent += `${r.ip}\t${r.count}\n`;
+          }
+          pivotTxtContent += `Grand Total\t${medikaPivotData.grandTotal}`;
+
+          const pivotTxtName = `pivot_ip_destination_medika_shift${shift}.txt`;
+          const pivotTxtPath = path.join(shiftOutdir, pivotTxtName);
+          fs.writeFileSync(pivotTxtPath, pivotTxtContent, 'utf-8');
+
+          resultFiles.push({
+            name: pivotTxtName,
+            path: pivotTxtPath,
+            downloadUrl: `/api/download?path=${encodeURIComponent(pivotTxtPath)}`,
+            type: 'pivot',
+            content: pivotTxtContent
+          });
+
+          // 2. Excel Format (.xlsx)
+          const pivotWs = XLSX.utils.json_to_sheet(
+            medikaPivotData.rows.map((r: any) => ({
+              "Row Labels": r.ip,
+              "Count of IP DESTINATION": r.count
+            }))
+          );
+
+          // Add Grand Total row
+          XLSX.utils.sheet_add_json(pivotWs, [
+            { "Row Labels": "Grand Total", "Count of IP DESTINATION": medikaPivotData.grandTotal }
+          ], { skipHeader: true, origin: -1 });
+
+          const pivotWb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(pivotWb, pivotWs, "Pivot Table IP Destination");
+
+          const pivotXlsxName = `pivot_ip_destination_medika_shift${shift}.xlsx`;
+          const pivotXlsxPath = path.join(shiftOutdir, pivotXlsxName);
+          XLSX.writeFile(pivotWb, pivotXlsxPath);
+
+          resultFiles.push({
+            name: pivotXlsxName,
+            path: pivotXlsxPath,
+            downloadUrl: `/api/download?path=${encodeURIComponent(pivotXlsxPath)}`,
+            type: 'excel'
+          });
+
+          processLog.push(`📊 Pivot Table Destination IP created: ${pivotTxtName} & ${pivotXlsxName}`);
+        }
       }
-    } else if (fileExt === 'xml') {
+    }
+
+    if (hasXmlFile) {
       const content = fs.readFileSync(file.path, 'utf-8');
       const parser = new xml2js.Parser({ explicitArray: false, mergeAttrs: true });
       const result = await parser.parseStringPromise(content);
@@ -3135,7 +3512,91 @@ SOC Neotech`;
       });
 
       processLog.push(`📊 XML successfully converted to Excel: ${excelFileName}`);
-    } else {
+
+      // If WA report was not created from text logs, generate it from XML offenses
+      const hasWaReport = resultFiles.some(f => f.type === 'wa' || f.name.startsWith('wa_'));
+      if (!hasWaReport) {
+        const waTemplatePath = path.join(getTemplatesDir(), instansi, `wa_template_${instansi}.txt`);
+        if (fs.existsSync(waTemplatePath)) {
+          const isMedika = instansi.toLowerCase() === 'medika';
+          const template = fs.readFileSync(waTemplatePath, 'utf-8');
+          const shiftInfo = SHIFTS[shift];
+          const greeting = shiftInfo ? shiftInfo[0] : "Selamat";
+          const jam = shiftInfo ? shiftInfo[1] : "";
+          const tanggal = tanggalFile !== "UnknownDate" ? tanggalFile : new Date().toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+          const offensesCount: Record<string, number> = {};
+          for (const r of rows) {
+            const name = (r.description || r.eventDescription || r.formattedOffenseType || r.escapedFormattedOffenseSource || "").trim().replace(/^"|"$/g, '');
+            if (!name) continue;
+            offensesCount[name] = (offensesCount[name] || 0) + 1;
+          }
+
+          let offensesStr = Object.entries(offensesCount)
+            .map(([name, count], i) => `${i + 1}. ${name} (${count} ${count > 1 ? 'events' : 'event'})`)
+            .join("\n");
+          if (!offensesStr) offensesStr = "Tidak ada event terdeteksi";
+
+          const logsStr = "Tidak ada event terdeteksi";
+          let alertsStr = isMedika ? offensesStr : "Tidak ada event terdeteksi";
+          let destinationIpPortsStr = "";
+
+          if (imageFile) {
+            processLog.push(`📷 Screenshot Dashboard SIEM terdeteksi. Menjalankan Gemini Vision OCR...`);
+            const ocrText = await extractSectionBFromImage(
+              imageFile.buffer || (imageFile.path ? fs.readFileSync(imageFile.path) : Buffer.from([])),
+              imageFile.mimetype || 'image/png'
+            );
+            if (ocrText) {
+              destinationIpPortsStr = ocrText;
+              processLog.push(`✅ Berhasil membaca data Destination IP & Port dari screenshot.`);
+            } else {
+              processLog.push(`⚠️ Gemini Vision OCR tidak mengembalikan hasil dari screenshot.`);
+            }
+          } else if (req.body.section_b_text && req.body.section_b_text.trim()) {
+            destinationIpPortsStr = req.body.section_b_text.trim();
+          }
+
+          if (!destinationIpPortsStr) {
+            if (isMedika && rows.length > 0) {
+              destinationIpPortsStr = buildDestinationIpPortsFromEvents(rows);
+            } else {
+              destinationIpPortsStr = "Tidak ada data Destination IP & Port detected";
+            }
+          }
+
+          sectionBText = destinationIpPortsStr;
+
+          let waText = template
+            .replace(/{salam}/g, greeting)
+            .replace(/{tanggal}/g, tanggal)
+            .replace(/{jam}/g, jam)
+            .replace(/{offenses}/g, offensesStr)
+            .replace(/{log_activity}/g, logsStr)
+            .replace(/{alerts}/g, alertsStr)
+            .replace(/{destination_ip_ports}/g, destinationIpPortsStr);
+
+          const shiftOutdir = cleanShiftFolder(outputDir, shift);
+          const waFileName = `wa_${instansi.toLowerCase()}_shift${shift}.txt`;
+          const waFilePath = path.join(shiftOutdir, waFileName);
+          fs.writeFileSync(waFilePath, waText, 'utf-8');
+
+          resultFiles.push({
+            name: waFileName,
+            path: waFilePath,
+            downloadUrl: `/api/download?path=${encodeURIComponent(waFilePath)}`,
+            type: 'wa',
+            content: waText
+          });
+
+          processLog.push(`💬 WA Report successfully created: ${waFileName}`);
+        } else {
+          processLog.push(`⚠️ WA template not found at templates/${instansi}/wa_template_${instansi}.txt`);
+        }
+      }
+    }
+
+    if (!hasTextContent && !hasXmlFile) {
       processLog.push(`❌ Unknown file format: ${fileExt}`);
     }
 
@@ -3160,7 +3621,9 @@ SOC Neotech`;
       instansi,
       shift,
       processLog,
-      resultFiles
+      resultFiles,
+      medikaPivotData,
+      sectionBText
     });
 
   } catch (error: any) {
@@ -3174,10 +3637,13 @@ SOC Neotech`;
       resultFiles: []
     });
   } finally {
-    // Clean up uploaded input file
+    // Clean up uploaded input file & image
     try {
-      if (file && fs.existsSync(file.path)) {
+      if (file && file.path && fs.existsSync(file.path)) {
         fs.unlinkSync(file.path);
+      }
+      if (imageFile && imageFile.path && fs.existsSync(imageFile.path)) {
+        fs.unlinkSync(imageFile.path);
       }
     } catch (e) {}
   }

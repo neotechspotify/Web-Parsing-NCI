@@ -7,5 +7,9 @@ Berikut kami lampirkan hasil dari monitoring pada tanggal {tanggal} {jam}, diman
 A. Alert :
 {alerts}
 
+B. Destination IP & Port Detected:
+{destination_ip_ports}
+
 Terimakasih, 
 SOC Neotech
+

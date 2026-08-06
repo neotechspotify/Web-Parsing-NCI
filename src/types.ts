@@ -55,6 +55,11 @@ export interface ProcessResult {
     domains: { domain: string; count: number }[];
   }[];
   aalRawData?: any[];
+  medikaPivotData?: {
+    rows: { ip: string; count: number }[];
+    grandTotal: number;
+  };
+  sectionBText?: string;
 }
 
 export interface TemplateInfo {

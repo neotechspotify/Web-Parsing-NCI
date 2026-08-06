@@ -34,11 +34,13 @@ import {
   Unlock,
   Key,
   Shield,
-  AlertCircle
+  AlertCircle,
+  Image as ImageIcon
 } from 'lucide-react';
 import companyLogo from './assets/images/nci_shield_white_bg_1783343904191.jpg';
 import { LogEvent, ProcessResult } from './types';
 import AalPivotVisualizer from './components/AalPivotVisualizer';
+import { MedikaPivotVisualizer } from './components/MedikaPivotVisualizer';
 import RepositoryTab from './components/RepositoryTab';
 
 export const downloadSingleFile = (fileObj: { name: string; content?: string; base64?: string; type?: string }) => {
@@ -196,6 +198,9 @@ function ProcessorTab({ instansiList, onProcessComplete }: { instansiList: strin
   const [instansi, setInstansi] = useState('kemkes');
   const [shift, setShift] = useState('1');
   const [file, setFile] = useState<File | null>(null);
+  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
+  const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
+  const screenshotInputRef = useRef<HTMLInputElement>(null);
   const [isDragActive, setIsDragActive] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState<ProcessResult | null>(null);
@@ -203,6 +208,29 @@ function ProcessorTab({ instansiList, onProcessComplete }: { instansiList: strin
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pasteText, setPasteText] = useState('');
   const [simpanSelama, setSimpanSelama] = useState('3 Hari');
+
+  // Clipboard paste event listener for screenshot image
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const blob = items[i].getAsFile();
+          if (blob) {
+            const imgFile = new File([blob], `dashboard_screenshot_${Date.now()}.png`, { type: blob.type });
+            setScreenshotFile(imgFile);
+            const reader = new FileReader();
+            reader.onload = (evt) => setScreenshotPreview(evt.target?.result as string);
+            reader.readAsDataURL(blob);
+            break;
+          }
+        }
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -239,7 +267,7 @@ function ProcessorTab({ instansiList, onProcessComplete }: { instansiList: strin
   };
 
   const handleProcess = async () => {
-    if (!file && !pasteText.trim()) return;
+    if (!file && !pasteText.trim() && !screenshotFile) return;
     setProcessing(true);
     setResult(null);
 
@@ -252,6 +280,9 @@ function ProcessorTab({ instansiList, onProcessComplete }: { instansiList: strin
     }
     if (pasteText.trim()) {
       formData.append('paste_text', pasteText);
+    }
+    if (screenshotFile) {
+      formData.append('image_file', screenshotFile);
     }
 
     try {
@@ -430,16 +461,82 @@ function ProcessorTab({ instansiList, onProcessComplete }: { instansiList: strin
           </div>
         </div>
 
+        {/* Screenshot Dashboard Upload & Paste Zone */}
+        <div className="flex flex-col gap-1.5 border-t border-slate-800/80 pt-3">
+          <label className="text-xs text-slate-300 font-medium flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <span>🖼️</span> Screenshot Dashboard (Heatmap/Top Ports)
+            </span>
+            <span className="text-[10px] text-indigo-400 font-mono bg-indigo-950/60 border border-indigo-800/50 px-1.5 py-0.5 rounded">Ctrl+V Paste</span>
+          </label>
+
+          <input
+            ref={screenshotInputRef}
+            type="file"
+            accept="image/*"
+            onChange={(e) => {
+              if (e.target.files && e.target.files[0]) {
+                const img = e.target.files[0];
+                setScreenshotFile(img);
+                const reader = new FileReader();
+                reader.onload = (evt) => setScreenshotPreview(evt.target?.result as string);
+                reader.readAsDataURL(img);
+              }
+            }}
+            className="hidden"
+          />
+
+          {!screenshotFile ? (
+            <div
+              onClick={() => screenshotInputRef.current?.click()}
+              className="border border-dashed border-slate-800 hover:border-indigo-500/60 bg-slate-950 rounded-xl p-3 flex items-center gap-3 cursor-pointer transition-colors"
+            >
+              <div className="h-8 w-8 rounded-lg bg-indigo-950/60 border border-indigo-800/40 flex items-center justify-center shrink-0">
+                <ImageIcon className="h-4 w-4 text-indigo-400" />
+              </div>
+              <div className="flex flex-col">
+                <p className="text-[11px] font-medium text-slate-200">
+                  Upload screenshot atau tekan <kbd className="bg-slate-800 px-1 py-0.5 rounded text-[9px] text-indigo-300 font-mono">Ctrl+V</kbd>
+                </p>
+                <p className="text-[9px] text-slate-500">Otomatis dibaca Gemini Vision untuk Bagian B</p>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-slate-950 border border-emerald-800/60 rounded-xl p-2.5 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 overflow-hidden">
+                {screenshotPreview && (
+                  <img src={screenshotPreview} alt="Screenshot preview" className="h-10 w-10 object-cover rounded-lg border border-slate-800 shrink-0" />
+                )}
+                <div className="truncate">
+                  <p className="text-[11px] font-semibold text-emerald-400 truncate">{screenshotFile.name}</p>
+                  <p className="text-[9px] text-slate-400">{(screenshotFile.size / 1024).toFixed(1)} KB • Disiapkan untuk Gemini Vision OCR</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setScreenshotFile(null);
+                  setScreenshotPreview(null);
+                  if (screenshotInputRef.current) screenshotInputRef.current.value = '';
+                }}
+                className="px-2 py-1 bg-slate-900 hover:bg-rose-950/50 hover:text-rose-400 border border-slate-800 text-[10px] font-semibold text-slate-300 rounded-lg shrink-0 transition-colors cursor-pointer"
+              >
+                Hapus
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Process Button */}
         <button
           onClick={handleProcess}
-          disabled={(!file && !pasteText.trim()) || processing}
+          disabled={(!file && !pasteText.trim() && !screenshotFile) || processing}
           className={`w-full py-2.5 px-4 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all duration-300 shadow-md ${
-            (!file && !pasteText.trim())
+            (!file && !pasteText.trim() && !screenshotFile)
               ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
               : processing
               ? 'bg-indigo-600/50 text-indigo-200 cursor-wait'
-              : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/15 hover:shadow-indigo-600/30'
+              : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/15 hover:shadow-indigo-600/30 cursor-pointer'
           }`}
         >
           {processing ? (
@@ -545,6 +642,8 @@ function ProcessorTab({ instansiList, onProcessComplete }: { instansiList: strin
                               ? 'bg-emerald-950/50 border-emerald-800 text-emerald-400'
                               : fileObj.type === 'wa'
                               ? 'bg-teal-950/50 border-teal-800 text-teal-400'
+                              : fileObj.type === 'pivot'
+                              ? 'bg-indigo-950/50 border-indigo-800 text-indigo-400'
                               : 'bg-indigo-950/50 border-indigo-800 text-indigo-400'
                           }`}>
                             {fileObj.type === 'excel' ? (
@@ -555,7 +654,7 @@ function ProcessorTab({ instansiList, onProcessComplete }: { instansiList: strin
                           </div>
                           <div className="overflow-hidden">
                             <h4 className="text-xs font-semibold text-slate-200 truncate">{fileObj.name}</h4>
-                            <p className="text-[10px] text-slate-500 mt-0.5 capitalize">{fileObj.type} Output Report</p>
+                            <p className="text-[10px] text-slate-500 mt-0.5 capitalize">{fileObj.type === 'pivot' ? 'Pivot Table' : fileObj.type} Output Report</p>
                           </div>
                         </div>
 
@@ -568,10 +667,10 @@ function ProcessorTab({ instansiList, onProcessComplete }: { instansiList: strin
                             Download File
                           </button>
 
-                          {fileObj.type === 'wa' && fileObj.content && (
+                          {(fileObj.type === 'wa' || fileObj.type === 'pivot') && fileObj.content && (
                             <button
                               onClick={() => copyToClipboard(fileObj.content!, index)}
-                              className="py-1 px-2.5 bg-slate-950 border border-slate-800 hover:bg-slate-900 rounded-lg text-[10px] font-semibold text-slate-200 flex items-center justify-center gap-1.5 transition-colors"
+                              className="py-1 px-2.5 bg-slate-950 border border-slate-800 hover:bg-slate-900 rounded-lg text-[10px] font-semibold text-slate-200 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                             >
                               {copiedIndex === index ? (
                                 <>
@@ -581,7 +680,7 @@ function ProcessorTab({ instansiList, onProcessComplete }: { instansiList: strin
                               ) : (
                                 <>
                                   <Copy className="h-3 w-3 text-indigo-400" />
-                                  Copy Report
+                                  Copy
                                 </>
                               )}
                             </button>
@@ -648,6 +747,14 @@ function ProcessorTab({ instansiList, onProcessComplete }: { instansiList: strin
                 pivotData={result.aalPivotData} 
                 rawData={result.aalRawData} 
                 isDga={result.isDga}
+              />
+            )}
+
+            {/* If there is medikaPivotData or sectionBText, render Medika visualizer */}
+            {(result.medikaPivotData || result.sectionBText) && (
+              <MedikaPivotVisualizer
+                pivotData={result.medikaPivotData}
+                sectionBText={result.sectionBText}
               />
             )}
           </motion.div>
