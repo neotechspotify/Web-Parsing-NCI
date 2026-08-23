@@ -31,12 +31,9 @@ Destination port :
 
 ===============================
 
-Alamat IP sumber terdeteksi sebagai bagian dari Spamhaus DROP List, yaitu daftar jaringan yang diketahui memiliki reputasi buruk dan 
-sering dikaitkan dengan aktivitas berbahaya seperti malware, botnet, command and control (C2), spam, maupun aktivitas pemindaian (scanning). 
-Alert ini menunjukkan bahwa terdapat komunikasi dari IP dengan reputasi buruk menuju server internal.
+Alamat IP sumber terdeteksi sebagai bagian dari Spamhaus DROP List, yaitu daftar jaringan yang diketahui memiliki reputasi buruk dan sering dikaitkan dengan aktivitas berbahaya seperti malware, botnet, command and control (C2), spam, maupun aktivitas pemindaian (scanning). Alert ini menunjukkan bahwa terdapat komunikasi dari IP dengan reputasi buruk menuju server internal.
 
-Berdasarkan log yang tersedia, alert ini tidak secara langsung membuktikan bahwa telah terjadi eksploitasi atau kompromi, 
-namun menunjukkan adanya komunikasi dari sumber yang memiliki reputasi buruk sehingga perlu dilakukan verifikasi lebih lanjut terhadap 
+Berdasarkan log yang tersedia, alert ini tidak secara langsung membuktikan bahwa telah terjadi eksploitasi atau kompromi, namun menunjukkan adanya komunikasi dari sumber yang memiliki reputasi buruk sehingga perlu dilakukan verifikasi lebih lanjut terhadap 
 aktivitas yang terjadi pada host tujuan.
 
 ===============================
