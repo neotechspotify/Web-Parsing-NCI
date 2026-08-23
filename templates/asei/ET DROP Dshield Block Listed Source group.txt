@@ -31,12 +31,9 @@ Destination Port :
 
 ===============================
 
-Alamat IP sumber terdeteksi sebagai bagian dari DShield Block List, yaitu daftar alamat IP yang memiliki reputasi buruk berdasarkan laporan aktivitas 
-berbahaya yang dikumpulkan oleh DShield. Aktivitas tersebut dapat mencakup pemindaian (scanning), percobaan eksploitasi, brute force, maupun aktivitas mencurigakan lainnya.
+Alamat IP sumber terdeteksi sebagai bagian dari DShield Block List, yaitu daftar alamat IP yang memiliki reputasi buruk berdasarkan laporan aktivitas berbahaya yang dikumpulkan oleh DShield. Aktivitas tersebut dapat mencakup pemindaian (scanning), percobaan eksploitasi, brute force, maupun aktivitas mencurigakan lainnya.
 
-Berdasarkan log yang tersedia, alert ini menunjukkan adanya komunikasi dari IP dengan reputasi buruk menuju layanan pada server internal. 
-Namun, alert ini tidak secara langsung membuktikan bahwa telah terjadi eksploitasi atau kompromi, sehingga diperlukan verifikasi lebih lanjut 
-terhadap aktivitas yang dilakukan oleh alamat IP tersebut.
+Berdasarkan log yang tersedia, alert ini menunjukkan adanya komunikasi dari IP dengan reputasi buruk menuju layanan pada server internal. Namun, alert ini tidak secara langsung membuktikan bahwa telah terjadi eksploitasi atau kompromi, sehingga diperlukan verifikasi lebih lanjut terhadap aktivitas yang dilakukan oleh alamat IP tersebut.
 
 ===============================
 
