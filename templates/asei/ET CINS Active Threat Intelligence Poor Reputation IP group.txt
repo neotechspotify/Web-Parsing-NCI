@@ -31,13 +31,10 @@ Destination Port :
 
 ===============================
 
-Alamat IP sumber terdeteksi sebagai bagian dari CINS Active Threat Intelligence, yaitu daftar threat intelligence yang mengidentifikasi alamat IP 
-dengan reputasi buruk berdasarkan aktivitas berbahaya yang diamati di internet, seperti pemindaian (scanning), malware, botnet, brute force,
-maupun aktivitas mencurigakan lainnya.
+Alamat IP sumber terdeteksi sebagai bagian dari CINS Active Threat Intelligence, yaitu daftar threat intelligence yang mengidentifikasi alamat IP dengan reputasi buruk berdasarkan aktivitas berbahaya yang diamati di internet, seperti pemindaian (scanning), malware, botnet, brute force, maupun aktivitas mencurigakan lainnya.
 
 Berdasarkan log yang tersedia, alert ini menunjukkan adanya komunikasi dari IP yang memiliki reputasi buruk menuju server internal. 
-Namun, alert ini tidak secara langsung membuktikan bahwa telah terjadi eksploitasi atau kompromi pada host tujuan, sehingga diperlukan verifikasi 
-lebih lanjut terhadap aktivitas yang dilakukan oleh IP tersebut.
+Namun, alert ini tidak secara langsung membuktikan bahwa telah terjadi eksploitasi atau kompromi pada host tujuan, sehingga diperlukan verifikasi lebih lanjut terhadap aktivitas yang dilakukan oleh IP tersebut.
 
 ===============================
 
