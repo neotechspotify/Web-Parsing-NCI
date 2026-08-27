@@ -47,11 +47,11 @@ Berdasarkan log yang tersedia, alert ini hanya menunjukkan adanya percobaan scan
 ===============================
 
 Mitigasi :<br>
-- Tinjau access log web server pada {dst_ip} untuk mengidentifikasi request yang berasal dari {src_ip}, khususnya permintaan menuju direktori .git/, file konfigurasi, maupun resource lain yang berkaitan dengan repositori Git.
+- Tinjau access log web server pada host untuk mengidentifikasi request yang berasal dari IP External, khususnya permintaan menuju direktori .git/, file konfigurasi, maupun resource lain yang berkaitan dengan repositori Git.
 - Pastikan direktori .git, file konfigurasi, dan artefak pengembangan lainnya tidak dapat diakses melalui HTTP serta tidak berada pada web root yang dapat diakses publik.
 - Verifikasi respons HTTP terhadap request tersebut. Apabila ditemukan respons HTTP 200 OK, segera lakukan peninjauan terhadap informasi yang berpotensi terekspos dan lakukan rotasi kredensial apabila terdapat data sensitif di dalam repositori.
 - Pastikan hanya file aplikasi yang diperlukan untuk operasional yang dipublikasikan ke web server, sementara file source code, repositori, dan artefak pengembangan tidak ikut ter-deploy ke lingkungan produksi.
-- Pertimbangkan untuk memblokir alamat IP {src_ip} pada firewall, IPS, atau External Dynamic List (EDL) apabila aktivitas scanning terus berulang dan dipastikan bukan berasal dari pihak yang sah.
+- Pertimbangkan untuk memblokir alamat IP pada firewall, IPS, atau External Dynamic List (EDL) apabila aktivitas scanning terus berulang dan dipastikan bukan berasal dari pihak yang sah.
 - Lakukan monitoring terhadap aktivitas scanning serupa maupun indikasi eksploitasi lanjutan pada web server.
 
 ===============================
