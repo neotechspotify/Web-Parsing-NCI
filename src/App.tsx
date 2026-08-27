@@ -35,6 +35,12 @@ import {
   Key,
   Shield,
   AlertCircle,
+  ExternalLink,
+  Maximize2,
+  Minimize2,
+  ZoomIn,
+  Columns,
+  Grid,
   Image as ImageIcon
 } from 'lucide-react';
 import companyLogo from './assets/images/nci_shield_white_bg_1783343904191.jpg'; 
@@ -203,7 +209,7 @@ export default function App() {
       </header>
 
       {/* Main Content Viewport */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
+      <main className="flex-1 max-w-[1750px] w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
         <AnimatePresence mode="wait">
           {activeTab === 'processor' && (
             <ProcessorTab
@@ -906,8 +912,13 @@ function ManualTab({
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<{ files: Array<{ name: string; content: string }> } | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [modalCopied, setModalCopied] = useState(false);
+  const [modalExpandedFile, setModalExpandedFile] = useState<{ name: string; content: string; index: number } | null>(null);
+  const [viewHeight, setViewHeight] = useState<'compact' | 'expanded' | 'full'>('expanded');
+  const [columnLayout, setColumnLayout] = useState<'auto' | '1col' | '2col'>('auto');
 
   const [previewModes, setPreviewModes] = useState<Record<number, 'rendered' | 'raw'>>({});
+  const [modalPreviewMode, setModalPreviewMode] = useState<'rendered' | 'raw'>('rendered');
   const [sophosFields, setSophosFields] = useState({
     incident_id: '[SOC-NEOTECH] -2780',
     username: 'sysadmin',
@@ -1056,7 +1067,7 @@ function ManualTab({
       className="grid grid-cols-1 lg:grid-cols-12 gap-6"
     >
       {/* Form Area */}
-      <div className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col gap-4 shadow-lg h-fit">
+      <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col gap-4 shadow-lg h-fit">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div className="flex items-center gap-2">
             <Edit3 className="h-4 w-4 text-indigo-400" />
@@ -1121,7 +1132,7 @@ function ManualTab({
               <textarea
                 value={rawText}
                 onChange={(e) => setRawText(e.target.value)}
-                className="w-full h-[220px] bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-200 resize-none"
+                className="w-full h-[260px] bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-200 resize-none"
                 placeholder="Paste the full tab-separated raw log line here..."
               ></textarea>
               <p className="text-[10px] text-slate-500 leading-relaxed">
@@ -1508,129 +1519,247 @@ function ManualTab({
       </div>
 
       {/* Output / Preview Area */}
-      <div className="lg:col-span-6 flex flex-col gap-4">
+      <div className="lg:col-span-7 flex flex-col gap-4">
         {/* If no generation result yet */}
         {!result && !generating && (
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col gap-4 text-center items-center justify-center min-h-[500px] shadow-lg">
-            <div className="h-12 w-12 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center">
-              <Eye className="h-5 w-5 text-slate-400" />
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col gap-4 text-center items-center justify-center min-h-[520px] shadow-lg">
+            <div className="h-14 w-14 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center text-indigo-400 shadow-inner">
+              <Eye className="h-6 w-6" />
             </div>
-            <div>
-              <h3 className="text-sm font-semibold text-slate-200">Event Report Preview</h3>
-              <p className="text-xs text-slate-400 max-w-sm mx-auto mt-2 leading-relaxed">
-                Fill the form or paste a raw log line, then click Generate. The complete report filled with variables will render here ready to copy or download.
+            <div className="space-y-1.5">
+              <h3 className="text-sm font-bold text-slate-200">Event Report Preview</h3>
+              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                Isi formulir atau paste raw log TSV, lalu klik <span className="text-indigo-400 font-semibold">Generate Manual Report</span>. Hasil laporan siap dikopi, diedit, atau dilihat dalam ukuran layar lebar / fullscreen.
               </p>
             </div>
           </div>
         )}
 
         {generating && (
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col gap-4 items-center justify-center min-h-[500px] shadow-lg">
-            <div className="h-10 w-10 rounded-full border-2 border-slate-800 border-t-indigo-500 animate-spin"></div>
-            <div className="text-center">
-              <h3 className="text-sm font-semibold text-slate-200">Processing Variables</h3>
-              <p className="text-xs text-indigo-400 mt-2 font-mono">Filling event template placeholders...</p>
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col gap-4 items-center justify-center min-h-[520px] shadow-lg">
+            <div className="h-12 w-12 rounded-full border-3 border-slate-800 border-t-indigo-500 animate-spin"></div>
+            <div className="text-center space-y-1">
+              <h3 className="text-sm font-bold text-slate-200">Memproses Placeholder Template</h3>
+              <p className="text-xs text-indigo-400 font-mono">Mengisi variabel event laporan...</p>
             </div>
           </div>
         )}
 
         {result && (
           <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-              <h3 className="text-xs font-semibold uppercase text-slate-400 tracking-wider flex items-center gap-2">
+            {/* Output Header Toolbar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-3 gap-3">
+              <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                Generated Event Reports ({result.files.length})
-              </h3>
+                <h3 className="text-xs font-bold uppercase text-slate-200 tracking-wider">
+                  Generated Event Reports ({result.files.length})
+                </h3>
+              </div>
+
+              {/* View Size & Layout Controls */}
+              <div className="flex items-center gap-2">
+                {result.files.length > 1 && (
+                  <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setColumnLayout('1col')}
+                      className={`px-2 py-1 rounded-md flex items-center gap-1 transition-all ${
+                        columnLayout === '1col' ? 'bg-indigo-600 text-white font-semibold shadow' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                      title="Tampilan 1 Kolom Lebar"
+                    >
+                      <Columns className="h-3 w-3" />
+                      <span>1 Kolom</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setColumnLayout('2col')}
+                      className={`px-2 py-1 rounded-md flex items-center gap-1 transition-all ${
+                        columnLayout === '2col' || (columnLayout === 'auto' && result.files.length > 1)
+                          ? 'bg-indigo-600 text-white font-semibold shadow'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                      title="Tampilan 2 Kolom Grid"
+                    >
+                      <Grid className="h-3 w-3" />
+                      <span>2 Kolom</span>
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setViewHeight('compact')}
+                    className={`px-2 py-1 rounded-md transition-all ${
+                      viewHeight === 'compact' ? 'bg-indigo-600 text-white font-semibold shadow' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="Ukuran Kotak Ringkas"
+                  >
+                    Ringkas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewHeight('expanded')}
+                    className={`px-2 py-1 rounded-md transition-all ${
+                      viewHeight === 'expanded' ? 'bg-indigo-600 text-white font-semibold shadow' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="Ukuran Kotak Diperbesar (Standar Nyaman)"
+                  >
+                    Besar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewHeight('full')}
+                    className={`px-2 py-1 rounded-md transition-all ${
+                      viewHeight === 'full' ? 'bg-indigo-600 text-white font-semibold shadow' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="Tampilkan Seluruh Isi Tanpa Batas Scroll"
+                  >
+                    Penuh
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+            {/* Cards Grid */}
+            <div className={`grid gap-4 ${
+              result.files.length === 1 || columnLayout === '1col'
+                ? 'grid-cols-1'
+                : columnLayout === '2col'
+                  ? 'grid-cols-1 md:grid-cols-2'
+                  : 'grid-cols-1 xl:grid-cols-2'
+            }`}>
               {result.files.map((fileObj, index) => (
                 <motion.div
                   key={index}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
-                  className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between gap-3 shadow-sm hover:border-slate-700 transition-colors"
+                  className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between gap-3 shadow-md hover:border-slate-700 transition-colors"
                 >
-                  <div className="flex items-start gap-3">
-                    <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0 border bg-indigo-950/50 border-indigo-800 text-indigo-400">
-                      <FileText className="h-4.5 w-4.5" />
+                  <div className="flex items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0 border bg-indigo-950/50 border-indigo-800 text-indigo-400 shadow-inner">
+                        <FileText className="h-4.5 w-4.5" />
+                      </div>
+                      <div className="overflow-hidden flex-1">
+                        <h4 className="text-xs font-bold text-slate-100 truncate" title={fileObj.name}>{fileObj.name}</h4>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Event Output Report</p>
+                      </div>
                     </div>
-                    <div className="overflow-hidden flex-1">
-                      <h4 className="text-xs font-semibold text-slate-200 truncate" title={fileObj.name}>{fileObj.name}</h4>
-                      <p className="text-[10px] text-slate-500 mt-0.5">Event Output Report</p>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModalExpandedFile({ name: fileObj.name, content: fileObj.content, index });
+                          setModalPreviewMode(previewModes[index] || 'rendered');
+                          setModalCopied(false);
+                        }}
+                        className="p-1.5 rounded-lg bg-slate-950 border border-slate-800 hover:bg-slate-800 hover:text-white text-indigo-300 transition-colors flex items-center gap-1 text-[10px] font-semibold"
+                        title="Buka Tampilan Layar Penuh (Fullscreen Modal)"
+                      >
+                        <Maximize2 className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">Perbesar</span>
+                      </button>
                     </div>
                   </div>
 
-                  <div className={`p-2.5 rounded-lg border ${
+                  {/* Body Content Preview Box */}
+                  <div className={`rounded-xl border overflow-hidden ${
                     fileObj.content && (fileObj.content.includes('<table') || fileObj.content.includes('</table>'))
                       ? 'bg-slate-900 border-slate-800'
-                      : 'bg-slate-950 border-slate-900'
+                      : 'bg-slate-950 border-slate-850'
                   }`}>
                     {fileObj.content && (fileObj.content.includes('<table') || fileObj.content.includes('</table>')) ? (
-                      <div className="flex flex-col gap-2">
-                        <div className="flex justify-end gap-1 border-b border-slate-800 pb-1.5 mb-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setPreviewModes(prev => ({ ...prev, [index]: 'rendered' }))}
-                            className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase transition-all ${
-                              (previewModes[index] || 'rendered') === 'rendered'
-                                ? 'bg-indigo-600 text-white'
-                                : 'bg-slate-950 text-slate-400 hover:text-slate-200'
-                            }`}
-                          >
-                            Rendered
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setPreviewModes(prev => ({ ...prev, [index]: 'raw' }))}
-                            className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase transition-all ${
-                              (previewModes[index] || 'rendered') === 'raw'
-                                ? 'bg-indigo-600 text-white'
-                                : 'bg-slate-950 text-slate-400 hover:text-slate-200'
-                            }`}
-                          >
-                            Raw Code
-                          </button>
+                      <div className="flex flex-col">
+                        <div className="flex items-center justify-between bg-slate-950/80 px-3 py-1.5 border-b border-slate-800">
+                          <span className="text-[10px] text-slate-400 font-mono">HTML Table Format</span>
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewModes(prev => ({ ...prev, [index]: 'rendered' }))}
+                              className={`px-2.5 py-0.5 rounded text-[9px] font-bold uppercase transition-all ${
+                                (previewModes[index] || 'rendered') === 'rendered'
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                              }`}
+                            >
+                              Rendered
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPreviewModes(prev => ({ ...prev, [index]: 'raw' }))}
+                              className={`px-2.5 py-0.5 rounded text-[9px] font-bold uppercase transition-all ${
+                                (previewModes[index] || 'rendered') === 'raw'
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                              }`}
+                            >
+                              Raw Code
+                            </button>
+                          </div>
                         </div>
+
                         {(previewModes[index] || 'rendered') === 'rendered' ? (
                           <div 
-                            className="text-[11px] text-slate-800 max-h-[350px] overflow-y-auto select-text bg-white p-4 rounded-md border border-slate-200"
+                            className={`text-xs text-slate-800 overflow-y-auto select-text bg-white p-4 leading-relaxed ${
+                              viewHeight === 'compact'
+                                ? 'max-h-[260px]'
+                                : viewHeight === 'full'
+                                  ? 'max-h-none min-h-[380px]'
+                                  : 'min-h-[360px] max-h-[580px]'
+                            }`}
                             dangerouslySetInnerHTML={{ __html: fileObj.content }}
                           />
                         ) : (
-                          <pre className="text-[10px] font-mono text-slate-400 max-h-[250px] overflow-y-auto whitespace-pre-wrap select-all bg-slate-950 p-2 rounded border border-slate-800">
+                          <pre className={`text-xs font-mono text-slate-300 overflow-y-auto whitespace-pre-wrap select-all bg-slate-950 p-4 leading-relaxed ${
+                            viewHeight === 'compact'
+                              ? 'max-h-[260px]'
+                              : viewHeight === 'full'
+                                ? 'max-h-none min-h-[380px]'
+                                : 'min-h-[360px] max-h-[580px]'
+                          }`}>
                             {fileObj.content}
                           </pre>
                         )}
                       </div>
                     ) : (
-                      <pre className="text-[10px] font-mono text-slate-400 max-h-[120px] overflow-y-auto whitespace-pre-wrap select-all">
+                      <pre className={`text-xs font-mono text-slate-200 overflow-y-auto whitespace-pre-wrap select-all p-4 bg-slate-950 leading-relaxed ${
+                        viewHeight === 'compact'
+                          ? 'min-h-[160px] max-h-[260px]'
+                          : viewHeight === 'full'
+                            ? 'min-h-[380px] max-h-none'
+                            : 'min-h-[360px] max-h-[580px]'
+                      }`}>
                         {fileObj.content}
                       </pre>
                     )}
                   </div>
 
-                  <div className="flex gap-2">
+                  {/* Actions */}
+                  <div className="flex gap-2 pt-1">
                     <button
                       onClick={() => downloadSingleFile(fileObj)}
-                      className="flex-1 py-1.5 px-3 bg-slate-950 border border-slate-800 hover:bg-slate-850 hover:text-white rounded-lg text-[10px] font-semibold text-slate-300 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      className="flex-1 py-2 px-3 bg-slate-950 border border-slate-800 hover:bg-slate-800 hover:text-white rounded-lg text-xs font-semibold text-slate-300 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                     >
-                      <Download className="h-3 w-3 text-indigo-400" />
+                      <Download className="h-3.5 w-3.5 text-indigo-400" />
                       Download File
                     </button>
 
                     <button
                       onClick={() => copySingleFileToClipboard(fileObj.content, index)}
-                      className="flex-1 py-1.5 px-3 bg-slate-950 border border-slate-800 hover:bg-slate-850 hover:text-white rounded-lg text-[10px] font-semibold text-slate-300 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      className="flex-1 py-2 px-3 bg-slate-950 border border-slate-800 hover:bg-slate-800 hover:text-white rounded-lg text-xs font-semibold text-slate-300 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                     >
                       {copiedIndex === index ? (
                         <>
-                          <Check className="h-3 w-3 text-emerald-400" />
+                          <Check className="h-3.5 w-3.5 text-emerald-400" />
                           Copied!
                         </>
                       ) : (
                         <>
-                          <Copy className="h-3 w-3 text-indigo-400" />
+                          <Copy className="h-3.5 w-3.5 text-indigo-400" />
                           Copy Report
                         </>
                       )}
@@ -1642,6 +1771,119 @@ function ManualTab({
           </div>
         )}
       </div>
+
+      {/* Fullscreen Expanded Report Modal */}
+      <AnimatePresence>
+        {modalExpandedFile && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 15 }}
+              className="bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden"
+            >
+              {/* Modal Header */}
+              <div className="px-6 py-4 border-b border-slate-800 bg-slate-950 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <div className="p-2.5 bg-indigo-950/60 border border-indigo-800/80 rounded-xl text-indigo-400">
+                    <FileText className="h-5 w-5" />
+                  </div>
+                  <div className="overflow-hidden">
+                    <h3 className="text-sm font-bold text-slate-100 truncate" title={modalExpandedFile.name}>
+                      {modalExpandedFile.name}
+                    </h3>
+                    <p className="text-xs text-slate-400">Tampilan Penuh Laporan Event</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {modalExpandedFile.content && (modalExpandedFile.content.includes('<table') || modalExpandedFile.content.includes('</table>')) && (
+                    <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-xs mr-2">
+                      <button
+                        type="button"
+                        onClick={() => setModalPreviewMode('rendered')}
+                        className={`px-3 py-1 rounded-md font-semibold transition-all ${
+                          modalPreviewMode === 'rendered' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        Rendered
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setModalPreviewMode('raw')}
+                        className={`px-3 py-1 rounded-md font-semibold transition-all ${
+                          modalPreviewMode === 'raw' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        Raw Code
+                      </button>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => downloadSingleFile(modalExpandedFile)}
+                    className="px-3 py-1.5 bg-slate-950 border border-slate-800 hover:bg-slate-800 hover:text-white rounded-lg text-xs font-semibold text-slate-200 flex items-center gap-1.5 transition-colors"
+                  >
+                    <Download className="h-3.5 w-3.5 text-indigo-400" />
+                    Download
+                  </button>
+
+                  <button
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(modalExpandedFile.content);
+                      } catch {
+                        const ta = document.createElement('textarea');
+                        ta.value = modalExpandedFile.content;
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(ta);
+                      }
+                      setModalCopied(true);
+                      setTimeout(() => setModalCopied(false), 2000);
+                    }}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 transition-colors shadow"
+                  >
+                    {modalCopied ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 text-emerald-300" />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5" />
+                        Copy Report
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => setModalExpandedFile(null)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors ml-1"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 flex-1 overflow-y-auto bg-slate-950">
+                {modalExpandedFile.content && (modalExpandedFile.content.includes('<table') || modalExpandedFile.content.includes('</table>')) && modalPreviewMode === 'rendered' ? (
+                  <div
+                    className="text-xs text-slate-800 bg-white p-6 rounded-xl leading-relaxed shadow select-text"
+                    dangerouslySetInnerHTML={{ __html: modalExpandedFile.content }}
+                  />
+                ) : (
+                  <pre className="text-xs font-mono text-slate-200 select-all whitespace-pre-wrap leading-relaxed bg-slate-900/60 p-6 rounded-xl border border-slate-800/80">
+                    {modalExpandedFile.content}
+                  </pre>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -1700,6 +1942,78 @@ function TemplatesTab({
   const [tempRepo, setTempRepo] = useState(githubRepo);
   const [tempBranch, setTempBranch] = useState(githubBranch);
   const [tempAutoSync, setTempAutoSync] = useState(githubAutoSync);
+  const [testGithubStatus, setTestGithubStatus] = useState<{
+    loading: boolean;
+    type: 'success' | 'error' | null;
+    message: string;
+  } | null>(null);
+
+  // Test PAT token against GitHub API directly
+  const testGithubConnection = async () => {
+    const pat = tempPat.trim();
+    const repoRaw = tempRepo.trim();
+    if (!pat) {
+      setTestGithubStatus({
+        loading: false,
+        type: 'error',
+        message: 'Masukkan Personal Access Token (PAT) terlebih dahulu.'
+      });
+      return;
+    }
+    setTestGithubStatus({ loading: true, type: null, message: 'Menguji token ke GitHub API...' });
+
+    try {
+      // 1. Verify User Authentication
+      const userRes = await fetch('https://api.github.com/user', {
+        headers: {
+          'Authorization': `Bearer ${pat}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+
+      if (!userRes.ok) {
+        if (userRes.status === 401) {
+          throw new Error('401 Bad credentials: Token tidak valid atau sudah kedaluwarsa di GitHub. Pastikan token disalin lengkap tanpa spasi.');
+        }
+        throw new Error(`GitHub API mengembalikan status ${userRes.status}: ${userRes.statusText}`);
+      }
+
+      const userData = await userRes.json();
+      const username = userData.login || 'User';
+
+      // 2. Verify Repository Access (if repo is set)
+      if (repoRaw) {
+        const cleanRepo = repoRaw.replace('https://github.com/', '').replace('.git', '').trim();
+        const repoRes = await fetch(`https://api.github.com/repos/${cleanRepo}`, {
+          headers: {
+            'Authorization': `Bearer ${pat}`,
+            'Accept': 'application/vnd.github.v3+json'
+          }
+        });
+
+        if (!repoRes.ok) {
+          if (repoRes.status === 404) {
+            throw new Error(`Token valid untuk user "${username}", tetapi tidak dapat mengakses repositori "${cleanRepo}". Pastikan nama repo benar dan token memiliki izin repository.`);
+          }
+          if (repoRes.status === 403) {
+            throw new Error(`Token tidak memiliki izin akses (403 Forbidden) ke repositori "${cleanRepo}". Pastikan scope "repo" atau permission "Contents: Read & write" diaktifkan.`);
+          }
+        }
+      }
+
+      setTestGithubStatus({
+        loading: false,
+        type: 'success',
+        message: `Koneksi Sukses! Terotentikasi sebagai @${username}. Token aktif dan siap digunakan.`
+      });
+    } catch (err: any) {
+      setTestGithubStatus({
+        loading: false,
+        type: 'error',
+        message: err.message || 'Gagal menguji koneksi token GitHub.'
+      });
+    }
+  };
 
   // Admin Privacy Mode States (Lock GitHub Settings / Push / Pull for regular users)
   const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => localStorage.getItem('repo_admin_unlocked') === 'true');
@@ -2654,20 +2968,61 @@ function TemplatesTab({
             </div>
 
             <form onSubmit={saveGithubSettings} className="flex flex-col gap-3 text-xs">
+              {/* Test Connection Status Banner */}
+              {testGithubStatus && (
+                <div
+                  className={`p-3 rounded-lg border text-xs flex items-start gap-2.5 ${
+                    testGithubStatus.loading
+                      ? 'bg-indigo-950/50 border-indigo-500/40 text-indigo-300'
+                      : testGithubStatus.type === 'success'
+                      ? 'bg-emerald-950/50 border-emerald-500/40 text-emerald-300'
+                      : 'bg-red-950/50 border-red-500/40 text-red-300'
+                  }`}
+                >
+                  {testGithubStatus.loading ? (
+                    <RefreshCw className="h-4 w-4 animate-spin shrink-0 mt-0.5" />
+                  ) : testGithubStatus.type === 'success' ? (
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 shrink-0 text-red-400 mt-0.5" />
+                  )}
+                  <div className="flex-1 text-[11px] leading-relaxed">
+                    <p className="font-semibold">{testGithubStatus.message}</p>
+                  </div>
+                </div>
+              )}
+
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">
-                  GitHub Personal Access Token (PAT)
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-slate-300 font-semibold flex items-center gap-1">
+                    GitHub Personal Access Token (PAT)
+                  </label>
+                  <a
+                    href="https://github.com/settings/tokens/new?scopes=repo&description=Web-Parsing-NCI-Sync"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1"
+                  >
+                    Generate PAT Classic <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
                 <input
                   type="password"
                   value={tempPat}
-                  onChange={(e) => setTempPat(e.target.value)}
-                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  onChange={(e) => {
+                    setTempPat(e.target.value);
+                    setTestGithubStatus(null);
+                  }}
+                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx atau github_pat_..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 />
-                <p className="text-[10px] text-slate-500 mt-1">
-                  Butuh scope <code className="text-indigo-400">repo</code> atau <code className="text-indigo-400">contents:write</code>.
-                </p>
+                <div className="mt-1.5 p-2 bg-slate-950/80 border border-slate-800/80 rounded text-[10px] text-slate-400 space-y-1">
+                  <p className="font-semibold text-slate-300">💡 Tips Menghindari Token Kedaluwarsa/Invalid:</p>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    <li><b>PAT Classic (<code className="text-indigo-300">ghp_...</code> - Disarankan):</b> Pilih Expiration <span className="text-amber-300">No expiration</span> atau 90 hari, dan centang checkbox <code className="text-indigo-300">repo</code>.</li>
+                    <li><b>Fine-Grained PAT (<code className="text-indigo-300">github_pat_...</code>):</b> Pastikan <i>Repository access</i> mengizinkan repo <code className="text-indigo-300">{tempRepo || 'neotechspotify/Web-Parsing-NCI'}</code> dan <i>Permissions &gt; Contents</i> diset <b>Read and write</b>.</li>
+                  </ul>
+                </div>
               </div>
 
               <div>
@@ -2679,7 +3034,7 @@ function TemplatesTab({
                   value={tempRepo}
                   onChange={(e) => setTempRepo(e.target.value)}
                   placeholder="username/my-soc-repo"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
                 />
               </div>
 
@@ -2692,7 +3047,7 @@ function TemplatesTab({
                   value={tempBranch}
                   onChange={(e) => setTempBranch(e.target.value)}
                   placeholder="main"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
                 />
               </div>
 
@@ -2709,21 +3064,32 @@ function TemplatesTab({
                 />
               </div>
 
-              <div className="flex justify-end gap-2 mt-2 pt-3 border-t border-slate-800">
+              <div className="flex items-center justify-between gap-2 mt-2 pt-3 border-t border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setShowGithubModal(false)}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-semibold"
+                  onClick={testGithubConnection}
+                  disabled={testGithubStatus?.loading || !tempPat.trim()}
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-indigo-500/40 text-indigo-300 rounded-lg font-semibold flex items-center gap-1.5 disabled:opacity-50 transition-colors"
                 >
-                  Batal
+                  <RefreshCw className={`h-3.5 w-3.5 ${testGithubStatus?.loading ? 'animate-spin' : ''}`} />
+                  Test Koneksi Token
                 </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold flex items-center gap-1.5"
-                >
-                  <Check className="h-4 w-4" />
-                  Simpan Konfigurasi
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowGithubModal(false)}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-semibold"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold flex items-center gap-1.5"
+                  >
+                    <Check className="h-4 w-4" />
+                    Simpan Konfigurasi
+                  </button>
+                </div>
               </div>
             </form>
           </motion.div>
