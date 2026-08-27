@@ -17,25 +17,22 @@ Deskripsi Event :<br>
 Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada
 
 Source IP :<br>
-{src_ip}	 
+{src_ip}</br>	 
 
 Source Country :<br>
-{src_country} 
+{src_country}</br>
 
 Destination IP : <br>
-{dst_ip} 
+{dst_ip}</br>
 
 Destination Port :<br>
-{dst_port} 
+{dst_port}</br>
 
 Destination Country :<br>
-{dst_country}
-
-Query :<br>
-{query}
+{dst_country}</br>
 
 URL/DNS :<br>
-{url}
+{url}</br>
 
 ===============================
 
@@ -48,13 +45,13 @@ Berdasarkan log yang tersedia, koneksi ke domain berbahaya telah berhasil dicega
 ===============================
 
 Mitigasi :<br>
-- Identifikasi aplikasi atau proses pada endpoint {dst_ip} yang melakukan query DNS malicious.
+- Identifikasi aplikasi atau proses pada endpoint yang melakukan query DNS malicious.
 - Lakukan pemeriksaan menggunakan EDR atau antivirus untuk memastikan tidak terdapat malware, adware, browser hijacker, atau aplikasi tidak sah pada endpoint.
 - Tinjau riwayat browser dan aktivitas pengguna untuk memastikan apakah akses dilakukan secara sengaja atau berasal dari redirect iklan maupun situs pihak ketiga.
 - Periksa log DNS, proxy, dan firewall untuk memastikan tidak terdapat percobaan koneksi lanjutan ke domain atau indikator kompromi lainnya.
 - Pastikan endpoint telah menggunakan antivirus/EDR dengan signature terbaru dan sistem operasi beserta aplikasi telah diperbarui.
 - Pertahankan kebijakan DNS Sinkhole atau DNS Security pada firewall agar domain berbahaya tetap diblokir.
-- Lakukan monitoring terhadap endpoint {dst_ip} untuk mendeteksi query DNS serupa maupun komunikasi ke domain berbahaya lainnya.
+- Lakukan monitoring terhadap endpoint untuk mendeteksi query DNS serupa maupun komunikasi ke domain berbahaya lainnya.
 
 ===============================
 
