@@ -1,0 +1,63 @@
+Dear Team KEMKES,
+
+Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
+
+===============================
+
+Sec. Event : {event_name}<br>
+Category : {severity}<br>
+Magnitude : {sev_magnitude}<br>
+Action : Closed<br>
+Waktu Deteksi : {tanggal} {waktu}<br>
+
+===============================
+
+Deskripsi Event :<br>
+Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada<br>
+
+Source IP :<br>
+{src_ip}	 
+
+Source Country :<br>
+{src_country} 
+
+Destination IP :<br>
+{dst_ip}
+
+Destination Port:<br>
+{dst_port} 
+
+Destination Country :<br>
+{dst_country}
+
+Query :<br>
+{query}
+
+URL/DNS :<br>
+{url}
+
+===============================
+
+Berdasarkan log yang tersedia, terdeteksi aktivitas Host Port Scan Detected by Remote Host, di mana terdapat indikasi bahwa alamat IP sumber {src_ip} melakukan pemindaian terhadap beberapa port pada host tujuan {dst_ip}.
+
+Aktivitas tersebut mengindikasikan adanya upaya network reconnaissance untuk mengidentifikasi port dan layanan yang aktif pada host tujuan. Informasi yang diperoleh dari aktivitas scanning dapat dimanfaatkan oleh pihak tidak berwenang sebagai tahap awal untuk menentukan target layanan yang berpotensi memiliki kerentanan dan selanjutnya melakukan eksploitasi.
+
+Namun, berdasarkan event yang tersedia, aktivitas tersebut tidak secara langsung membuktikan adanya eksploitasi atau kompromi pada host tujuan. Diperlukan pengecekan lebih lanjut terhadap log firewall, IDS/IPS, serta host tujuan untuk memastikan apakah terdapat aktivitas lanjutan setelah proses scanning tersebut.
+
+
+===============================
+
+Mitigasi :<br>
+- Verifikasi apakah IP sumber {src_ip} merupakan sumber scanning yang legitimate atau memiliki kebutuhan bisnis yang sah.
+- Lakukan pengecekan pada firewall/IPS log untuk mengetahui apakah terdapat koneksi lanjutan dari IP sumber menuju host tujuan.
+- Periksa port dan layanan yang terdeteksi terbuka pada host {dst_ip} dan pastikan hanya layanan yang diperlukan yang dapat diakses.
+- Tutup atau batasi akses terhadap port dan service yang tidak diperlukan melalui firewall atau ACL.
+- Apabila aktivitas tidak memiliki kebutuhan bisnis yang sah, pertimbangkan untuk melakukan blocking terhadap IP sumber pada firewall/IPS.
+- Monitor host tujuan untuk memastikan tidak terdapat aktivitas lanjutan seperti **brute force, exploitation attempt, atau suspicious connection.
+- Terapkan mekanisme rate limiting/scanning detection pada firewall atau IPS untuk mengurangi aktivitas reconnaissance serupa.
+- Pastikan sistem dan layanan pada host tujuan telah menggunakan patch/security update terbaru.
+
+===============================
+
+Terimakasih,<br>
+SOC Neotech
