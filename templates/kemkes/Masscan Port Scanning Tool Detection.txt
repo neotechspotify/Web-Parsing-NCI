@@ -1,0 +1,62 @@
+Dear Team KEMKES,
+
+Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
+
+===============================
+
+Sec. Event : {event_name}<br>
+Category : {severity}<br>
+Magnitude : {sev_magnitude}<br>
+Action : Closed<br>
+Waktu Deteksi : {tanggal} {waktu}<br>
+
+===============================
+
+Deskripsi Event :<br>
+Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada<br>
+
+Source IP :<br>
+{src_ip}	 
+
+Source Country :<br>
+{src_country} 
+
+Destination IP :<br>
+{dst_ip}
+
+Destination Port:<br>
+{dst_port} 
+
+Destination Country :<br>
+{dst_country}
+
+Query :<br>
+{query}
+
+URL/DNS :<br>
+{url}
+
+===============================
+
+Berdasarkan log yang tersedia, terdeteksi aktivitas Masscan Port Scanning Tool Detection dari alamat IP {src_ip} yang berasal dari United States menuju host {dst_ip} pada port {port}/TCP.
+
+Masscan merupakan tool yang dapat digunakan untuk melakukan pemindaian jaringan secara cepat dalam jumlah besar guna mengidentifikasi host, port, dan layanan yang terbuka. Aktivitas tersebut dapat mengindikasikan adanya network reconnaissance untuk memperoleh informasi mengenai service yang tersedia pada host tujuan sebelum dilakukan aktivitas lanjutan seperti eksploitasi atau percobaan akses tidak sah.
+
+Namun, berdasarkan log yang tersedia, event ini tidak secara langsung membuktikan bahwa telah terjadi eksploitasi atau kompromi pada host tujuan. Action pada Palo Alto tercatat sebagai Alert, sehingga diperlukan pengecekan lebih lanjut untuk memastikan apakah aktivitas tersebut hanya sebatas scanning atau diikuti dengan koneksi maupun percobaan eksploitasi lainnya.
+
+===============================
+
+Mitigasi :<br>
+- Verifikasi apakah IP sumber {src_ip} merupakan sumber aktivitas yang legitimate atau memiliki kebutuhan bisnis yang sah.
+- Lakukan pengecekan pada firewall/IPS log untuk mengetahui apakah terdapat koneksi lanjutan dari IP sumber menuju host tujuan.
+- Verifikasi layanan yang berjalan pada port 8080 dan pastikan layanan tersebut memang diperlukan untuk dapat diakses dari Internet.
+- Batasi akses terhadap port atau service yang tidak diperlukan melalui firewall/ACL.
+- Apabila aktivitas tidak memiliki kebutuhan bisnis yang sah, pertimbangkan untuk melakukan blocking terhadap IP sumber melalui firewall/IPS.
+- Monitor host {dst_ip} terhadap aktivitas lanjutan seperti brute force, vulnerability scanning, exploitation attempt, atau suspicious connection.
+- Pastikan service yang berjalan pada port 8080 telah menggunakan versi dan security patch terbaru.
+- Pertimbangkan penerapan rule IPS/anti-port scanning dengan action Block/Prevent untuk aktivitas scanning yang tidak legitimate.
+
+===============================
+
+Terimakasih,<br>
+SOC Neotech
