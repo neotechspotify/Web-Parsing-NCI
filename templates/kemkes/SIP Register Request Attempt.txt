@@ -1,0 +1,59 @@
+Dear Team KEMKES,
+
+Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
+
+===============================
+
+Sec. Event : {event_name}<br>
+Category : {severity}<br>
+Magnitude : {sev_magnitude}<br>
+Action : Closed<br>
+Waktu Deteksi : {tanggal} {waktu}<br>
+
+===============================
+
+Deskripsi Event :<br>
+Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada<br>
+
+Source IP :<br>
+{src_ip}	 
+
+Source Country :<br>
+{src_country} 
+
+Destination IP :<br>
+{dst_ip}
+
+Destination Port:<br>
+{dst_port} 
+
+Destination Country :<br>
+{dst_country}
+
+Query :<br>
+{query}
+
+URL/DNS :<br>
+{url}
+
+===============================
+
+Event ini terjadi karena perangkat keamanan Palo Alto mendeteksi adanya permintaan SIP REGISTER yang sesuai dengan signature "SIP Register Request Attempt". Aktivitas tersebut mengindikasikan adanya percobaan akses atau registrasi terhadap layanan SIP (VoIP) yang dapat digunakan sebagai bagian dari proses enumerasi akun maupun upaya brute-force terhadap layanan komunikasi berbasis SIP.
+
+Berdasarkan log yang tersedia, belum terdapat indikasi bahwa proses autentikasi berhasil ataupun terjadi kompromi pada layanan SIP. Namun demikian, diperlukan pemeriksaan lebih lanjut terhadap log SIP Server atau PBX untuk memastikan apakah terdapat percobaan login berulang, autentikasi yang berhasil, maupun aktivitas mencurigakan lainnya yang berkaitan dengan alamat IP sumber tersebut.
+
+===============================
+
+Mitigasi :<br>
+- Lakukan pemeriksaan terhadap log SIP Server/PBX pada alamat {dst_ip} untuk mengidentifikasi adanya percobaan registrasi maupun autentikasi yang berasal dari {src_ip}.
+- Verifikasi apakah terdapat autentikasi yang berhasil, percobaan brute-force, atau aktivitas enumerasi extension SIP.
+- Pastikan layanan SIP hanya dapat diakses oleh alamat IP atau jaringan yang memang memiliki kebutuhan operasional (whitelist apabila memungkinkan).
+- Terapkan mekanisme proteksi seperti rate limiting, fail2ban, atau fitur anti brute-force pada SIP Server/PBX apabila tersedia.
+- Pastikan seluruh akun SIP menggunakan kata sandi yang kuat dan unik serta pertimbangkan penggunaan SIP over TLS untuk meningkatkan keamanan komunikasi.
+- Apabila alamat IP {src_ip} teridentifikasi melakukan aktivitas berulang dan tidak memiliki kebutuhan bisnis yang sah, pertimbangkan untuk melakukan pemblokiran pada Firewall, IPS, maupun mekanisme keamanan lainnya.
+- Lakukan monitoring terhadap aktivitas serupa untuk mendeteksi indikasi percobaan eksploitasi atau brute-force lanjutan terhadap layanan SIP.
+
+===============================
+
+Terimakasih,<br>
+SOC Neotech
