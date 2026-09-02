@@ -1,0 +1,64 @@
+Dear Team KEMKES,
+
+Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
+
+===============================
+
+Sec. Event : {event_name}<br>
+Category : {severity}<br>
+Magnitude : {sev_magnitude}<br>
+Action : Closed<br>
+Waktu Deteksi : {tanggal} {waktu}<br>
+
+===============================
+
+Deskripsi Event :<br>
+Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada<br>
+
+Source IP :<br>
+{src_ip}	 
+
+Source Country :<br>
+{src_country} 
+
+Destination IP :<br>
+{dst_ip}
+
+Destination Port:<br>
+{dst_port} 
+
+Destination Country :<br>
+{dst_country}
+
+Query :<br>
+{query}
+
+URL/DNS :<br>
+{url}
+
+===============================
+
+Berdasarkan log yang tersedia, Palo Alto mendeteksi adanya percobaan akses terhadap file sistem /etc/passwd pada layanan web yang berjalan di destination IP {dst_ip} melalui port {dst_port}. Aktivitas tersebut terdeteksi dengan signature HTTP /etc/passwd Access Attempt (35107) dan dikategorikan sebagai info-leak, yang mengindikasikan adanya potensi percobaan Information Disclosure melalui aplikasi web.
+
+File /etc/passwd merupakan file sistem pada sistem operasi Linux/Unix yang berisi informasi mengenai akun pengguna pada sistem. Meskipun pada sistem modern informasi password tidak disimpan secara langsung dalam file tersebut, keberhasilan akses terhadap file ini tetap dapat memberikan informasi yang dapat digunakan oleh attacker untuk melakukan reconnaissance maupun serangan lanjutan.
+
+Berdasarkan log, komunikasi berasal dari IP {src_ip} dengan sumber negara {src_country} menuju {dst_ip}. Traffic tercatat dengan action`ALLOW, sehingga komunikasi tersebut diizinkan oleh firewall. Namun, berdasarkan log ini belum dapat dipastikan apakah request tersebut berhasil membaca file `/etc/passwd` atau hanya merupakan percobaan akses yang ditolak oleh aplikasi.
+
+Oleh karena itu, diperlukan verifikasi lebih lanjut terhadap access log dan application log pada host tujuan untuk memastikan apakah terdapat response terhadap request tersebut serta mengidentifikasi adanya aktivitas lanjutan setelah percobaan akses.
+
+===============================
+
+Mitigasi :<br>
+- Verifikasi apakah komunikasi dari alamat IP sumber {src_ip} merupakan aktivitas yang sah atau memiliki kebutuhan bisnis yang valid.
+- Lakukan pemeriksaan pada access log dan application log host {dst_ip} untuk memastikan apakah terdapat request terhadap /etc/passwd dan apakah request tersebut berhasil mendapatkan response.
+- Periksa status HTTP response dari request tersebut, khususnya apabila ditemukan response 200, untuk memastikan tidak terjadi pengungkapan informasi sistem.
+- Lakukan pemeriksaan terhadap aplikasi/service yang berjalan pada port {dst_port} dan pastikan tidak terdapat vulnerability seperti Path Traversal atau Local File Inclusion (LFI) yang dapat digunakan untuk mengakses file sistem.
+* Lakukan update atau patch terhadap aplikasi, framework, maupun service yang berjalan pada host tujuan apabila ditemukan versi yang rentan.
+- Pastikan aplikasi web berjalan dengan prinsip least privilege dan tidak memiliki hak akses berlebihan terhadap file sistem.
+- Blokir alamat IP sumber apabila tidak terdapat kebutuhan bisnis yang sah atau terindikasi melakukan aktivitas berbahaya.
+- Lakukan monitoring terhadap host tujuan untuk memastikan tidak terdapat percobaan eksploitasi, enumeration, maupun aktivitas mencurigakan lainnya dari alamat IP sumber tersebut.
+
+===============================
+
+Terimakasih,<br>
+SOC Neotech
