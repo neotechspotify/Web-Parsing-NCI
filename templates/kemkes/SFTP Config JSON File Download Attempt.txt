@@ -48,7 +48,7 @@ Berdasarkan log yang tersedia, alert ini hanya menunjukkan adanya percobaan akse
 ===============================
 
 Mitigasi :<br>
-- Tinjau access log dan web server log pada {dst_ip} untuk mengidentifikasi request menuju sftp-config.json pada waktu kejadian.
+- Tinjau access log dan web server log untuk mengidentifikasi request menuju sftp-config.json pada waktu kejadian.
 - Verifikasi respons HTTP yang diberikan server (misalnya 200 OK, 403 Forbidden, atau 404 Not Found) untuk memastikan apakah file berhasil diakses.
 - Pastikan file sftp-config.json tidak berada pada direktori yang dapat diakses publik. Jika file tersebut tidak diperlukan pada web root, segera hapus atau pindahkan ke lokasi yang aman.
 - Apabila file tersebut berisi kredensial atau informasi koneksi SFTP, lakukan rotasi password, SSH key, atau kredensial terkait sebagai tindakan pencegahan apabila terdapat indikasi file sempat terekspos.
