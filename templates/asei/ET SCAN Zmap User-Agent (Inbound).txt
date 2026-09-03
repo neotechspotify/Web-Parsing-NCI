@@ -1,0 +1,56 @@
+Dear Team ASEI,
+
+Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
+
+===============================
+
+No Tiket : {ticket_id}
+Sec. Event : {event_type}
+Signature : {event_name}
+Log Source : Suricata
+Severity : {severity}
+Action : {action}
+Waktu Deteksi : {tanggal} {waktu}
+
+===============================
+
+Deskripsi Event :
+Tim SOC mendeteksi adanya percobaan komunikasi anomali yang terjadi pada:
+
+Source IP :
+{src_ip}
+
+Source IP Country :
+{src_country}
+
+Destination IP :
+{dst_ip}
+
+Destination Port :
+{dst_port}
+
+===============================
+
+Berdasarkan log yang tersedia, terdeteksi penggunaan User-Agent Mozilla/5.0 zgrab/0.x. Zgrab merupakan tool yang umum digunakan untuk melakukan scanning dan service discovery terhadap host yang terhubung ke Internet.
+
+Aktivitas yang terdeteksi berupa request GET / menuju service pada port 443, yang mengindikasikan kemungkinan adanya proses reconnaissance atau fingerprinting untuk mengetahui apakah host aktif serta informasi layanan yang tersedia.
+
+Alert ini dikategorikan sebagai Detection of a Network Scan dengan severity Informational/Low. Berdasarkan payload yang terdeteksi, belum terdapat indikasi eksploitasi, percobaan login, maupun aktivitas yang menunjukkan keberhasilan kompromi terhadap server tujuan.
+
+Namun, karena action pada alert tercatat Allow, koneksi dari IP tersebut berhasil mencapai server tujuan sehingga diperlukan pengecekan lebih lanjut terhadap aktivitas setelah request tersebut.
+
+===============================
+
+Mitigasi :
+
+- Verifikasi apakah server {dst_ip} memang menyediakan layanan yang dapat diakses dari Internet melalui port {dst_port}.
+- Lakukan pengecekan access log pada web server untuk mengetahui response terhadap request dari IP {src_ip}
+- Korelasikan dengan log firewall, WAF, maupun IDS untuk memastikan tidak terdapat request lanjutan atau aktivitas scanning terhadap endpoint lainnya.
+- Pastikan informasi sensitif seperti versi web server, framework, banner, maupun konfigurasi internal tidak terekspos pada response HTTP.
+- Apabila tidak terdapat kebutuhan bisnis yang sah dan aktivitas scanning berulang, pertimbangkan untuk melakukan blocking atau rate limiting terhadap IP tersebut melalui firewall/WAF.
+- Terapkan monitoring terhadap aktivitas reconnaissance serupa dengan User-Agent zgrab maupun tool scanning lainnya.
+
+===============================
+
+Terimakasih,
+SOC Neotech
