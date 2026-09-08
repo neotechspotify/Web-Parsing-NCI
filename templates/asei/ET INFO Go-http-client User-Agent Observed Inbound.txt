@@ -1,0 +1,54 @@
+Dear Team ASEI,
+
+Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
+
+===============================
+
+No Tiket : {ticket_id}
+Sec. Event : {event_type}
+Signature : {event_name}
+Log Source : Suricata
+Severity : {severity}
+Action : {action}
+Waktu Deteksi : {tanggal} {waktu}
+
+===============================
+
+Deskripsi Event :
+Tim SOC mendeteksi adanya percobaan komunikasi anomali yang terjadi pada:
+
+Source IP :
+{src_ip}
+
+Source IP Country :
+{src_country}
+
+Destination IP :
+{dst_ip}
+
+Destination Port :
+{dst_port}
+
+===============================
+
+Request tersebut menggunakan SOAP/XML dengan operasi RetrieveServiceContent terhadap ServiceInstance, yang umumnya digunakan pada VMware vSphere Web Services API. Aktivitas ini dapat mengindikasikan adanya proses reconnaissance atau probing terhadap layanan VMware.
+
+Berdasarkan log yang tersedia, belum terdapat indikasi eksploitasi berhasil maupun kompromi terhadap server. Namun, karena request berasal dari external IP menuju endpoint /sdk, diperlukan pengecekan lebih lanjut untuk memastikan aktivitas tersebut legitimate.
+
+
+===============================
+
+Mitigasi :
+
+
+- Melakukan monitoring terhadap source IP 167.99.140.99 64.227.115.180 193.176.31.194 untuk mengidentifikasi adanya scanning atau probing lanjutan.
+- Melakukan pengecekan access log pada server tujuan untuk memastikan tidak terdapat request mencurigakan lainnya.
+- Memastikan endpoint /sdk dan layanan VMware yang terekspos hanya dapat diakses oleh pihak atau jaringan yang legitimate.
+- Apabila akses dari jaringan publik tidak diperlukan, dapat dilakukan pembatasan akses melalui firewall atau ACL.
+- Apabila aktivitas berulang dan tidak legitimate, dapat dilakukan blocking terhadap source IP 167.99.140.99 64.227.115.180 193.176.31.194 
+
+
+===============================
+
+Terimakasih,
+SOC Neotech
