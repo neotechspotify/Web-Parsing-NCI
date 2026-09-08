@@ -29,6 +29,9 @@ Destination IP :
 Destination Port :
 {dst_port}
 
+Payload :
+{payload}
+
 ===============================
 
 Request tersebut menggunakan SOAP/XML dengan operasi RetrieveServiceContent terhadap ServiceInstance, yang umumnya digunakan pada VMware vSphere Web Services API. Aktivitas ini dapat mengindikasikan adanya proses reconnaissance atau probing terhadap layanan VMware.
