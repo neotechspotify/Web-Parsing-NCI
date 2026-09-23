@@ -1,0 +1,49 @@
+Dear Team ASEI,
+
+Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
+
+===============================
+
+No Tiket : {ticket_id}
+Sec. Event : {event_type}
+Signature : {event_name}
+Log Source : Suricata
+Severity : {severity}
+Action : {action}
+Waktu Deteksi : {tanggal} {waktu}
+
+===============================
+
+Deskripsi Event :
+Tim SOC mendeteksi adanya percobaan komunikasi anomali yang terjadi pada:
+
+Source IP :
+{src_ip}
+
+Source IP Country :
+{src_country}
+
+Destination IP :
+{dst_ip}
+
+Destination Port :
+{dst_port}
+
+===============================
+
+Event ini mendeteksi adanya permintaan HTTP yang mengarah ke file .env, yaitu file konfigurasi yang umum digunakan oleh berbagai aplikasi web, termasuk Laravel. File tersebut sering kali menyimpan informasi sensitif seperti kredensial database, API key, secret key aplikasi, serta konfigurasi layanan lainnya. Pada Alert ini menunjukkan bahwa ada upaya untuk mengakses atau memindai file .env pada sebuah server atau aplikasi web. Di mana penyerang mencoba mencari kelemahan dengan memindai file konfigurasi yang mengandung informasi sensitif
+
+
+===============================
+
+Mitigasi :
+
+- Apabila source IP melakukan scanning berulang atau mencoba berbagai endpoint sensitif lainnya, lakukan pemblokiran melalui Firewall atau Web Application Firewall (WAF)
+- Pastikan aktivitas scanning bukan dilakukan secara sengaja oleh user internal tanpa izin
+- Blokir akses ke file .env di server
+
+
+===============================
+
+Terimakasih,
+SOC Neotech
