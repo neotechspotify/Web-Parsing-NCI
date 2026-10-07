@@ -17,7 +17,9 @@ import {
   ExternalLink,
   Shield,
   Layers,
-  HelpCircle
+  HelpCircle,
+  Lock,
+  Unlock
 } from 'lucide-react';
 import {
   ReportMeta,
@@ -31,11 +33,15 @@ import {
 } from '../utils/templateDocxEngine';
 import {
   VULN_PRESETS,
-  SAMPLE_ASPAK_REPORT,
-  SAMPLE_SIHEPI_REPORT
+  SAMPLE_ASPAK_REPORT
 } from '../utils/vulnTemplates';
 
-export default function VulnReportTab() {
+interface VulnReportTabProps {
+  isAdminUnlocked?: boolean;
+  onLockAdmin?: () => void;
+}
+
+export default function VulnReportTab({ isAdminUnlocked = true, onLockAdmin }: VulnReportTabProps) {
   const [meta, setMeta] = useState<ReportMeta>(SAMPLE_ASPAK_REPORT.meta);
 
   const [vulnerabilities, setVulnerabilities] = useState<VulnerabilityItem[]>(SAMPLE_ASPAK_REPORT.vulnerabilities);
@@ -45,12 +51,25 @@ export default function VulnReportTab() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [expandedVulnId, setExpandedVulnId] = useState<string | null>('vuln-aspak-1');
+  const [analyzingVulnIds, setAnalyzingVulnIds] = useState<Record<string, boolean>>({});
 
   const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
 
   const showNotification = (type: 'success' | 'error' | 'info', message: string) => {
     setNotification({ type, message });
     setTimeout(() => setNotification(null), 5000);
+  };
+
+  // Helper to render markdown bold tokens in preview
+  const renderRichText = (text: string) => {
+    if (!text) return null;
+    const parts = text.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((part, idx) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={idx} className="font-bold text-slate-950">{part.slice(2, -2)}</strong>;
+      }
+      return part;
+    });
   };
 
   // Add new vulnerability
@@ -222,20 +241,6 @@ export default function VulnReportTab() {
     showNotification('info', 'Formulir telah direset.');
   };
 
-  // Load sample SIHEPI document
-  const handleLoadSampleSihepi = () => {
-    setMeta({
-      ...SAMPLE_SIHEPI_REPORT.meta,
-      reportDate: new Date().toLocaleDateString('id-ID', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric'
-      })
-    });
-    setVulnerabilities(SAMPLE_SIHEPI_REPORT.vulnerabilities);
-    showNotification('success', 'Contoh dokumen resmi SIHEPI (Weak Password + IDOR) berhasil dimuat!');
-  };
-
   // Generate narrative using Gemini AI
   const handleGenerateAI = async () => {
     setIsGeneratingAI(true);
@@ -256,6 +261,11 @@ export default function VulnReportTab() {
           owasp: v.owasp,
           status: v.status,
           notes: v.notes,
+          images: v.images.map(img => ({
+            id: img.id,
+            dataUrl: img.dataUrl,
+            caption: img.caption
+          })),
           imageCaptions: v.images.map(img => img.caption)
         }))
       };
@@ -278,7 +288,7 @@ export default function VulnReportTab() {
           conclusion: data.conclusion || prev.conclusion
         }));
 
-        // Update each vulnerability's technical details if available
+        // Update each vulnerability's technical details and image captions if available
         if (Array.isArray(data.vulnDetails)) {
           setVulnerabilities(prev =>
             prev.map((v, idx) => {
@@ -291,7 +301,13 @@ export default function VulnReportTab() {
                 impact: aiDetail.impact || v.impact,
                 recommendations: aiDetail.recommendations && aiDetail.recommendations.length > 0
                   ? aiDetail.recommendations
-                  : v.recommendations
+                  : v.recommendations,
+                images: Array.isArray(aiDetail.imageCaptions) && aiDetail.imageCaptions.length > 0
+                  ? v.images.map((img, imgI) => ({
+                      ...img,
+                      caption: aiDetail.imageCaptions[imgI] || img.caption
+                    }))
+                  : v.images
               };
             })
           );
@@ -300,7 +316,7 @@ export default function VulnReportTab() {
         if (json.fallback) {
           showNotification('info', '✨ Narasi standar resmi CSIRT Kemenkes berhasil dimuat.');
         } else {
-          showNotification('success', '✨ Narasi laporan berhasil dibuat oleh Gemini AI!');
+          showNotification('success', '✨ Narasi laporan detail berhasil dibuat oleh Gemini AI!');
         }
       } else {
         // Fallback: Use local curated templates
@@ -316,20 +332,90 @@ export default function VulnReportTab() {
     }
   };
 
+  // Dedicated generator: Analyze images with AI to build detailed PoC narrative for a specific vulnerability
+  const handleGeneratePoCFromImages = async (vulnId: string) => {
+    const vuln = vulnerabilities.find(v => v.id === vulnId);
+    if (!vuln || vuln.images.length === 0) {
+      showNotification('info', 'Silakan unggah minimal 1 tangkapan layar PoC terlebih dahulu untuk dianalisis oleh AI.');
+      return;
+    }
+    const vulnIndex = vulnerabilities.findIndex(v => v.id === vulnId);
+    const subNum = `3.${vulnIndex + 1}`;
+
+    setAnalyzingVulnIds(prev => ({ ...prev, [vulnId]: true }));
+    showNotification('info', `🤖 Gemini AI sedang membaca elemen screenshot dan membuat narasi detail untuk ${vuln.name || 'temuan'}...`);
+
+    try {
+      const payload = {
+        appName: meta.appName,
+        targetUrl: meta.targetUrl,
+        name: vuln.name,
+        path: vuln.path,
+        severity: vuln.severity,
+        owasp: vuln.owasp,
+        notes: vuln.notes,
+        subNum,
+        images: vuln.images.map(img => ({
+          dataUrl: img.dataUrl,
+          caption: img.caption
+        }))
+      };
+
+      const res = await fetch('/api/generate-poc-from-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json().catch(() => ({}));
+      if (json.success && json.data) {
+        const { pocNarrative, imageCaptions, techDescription, impact } = json.data;
+        setVulnerabilities(prev =>
+          prev.map(v => {
+            if (v.id !== vulnId) return v;
+            return {
+              ...v,
+              pocNarrative: pocNarrative || v.pocNarrative,
+              techDescription: v.techDescription ? v.techDescription : (techDescription || v.techDescription),
+              impact: v.impact ? v.impact : (impact || v.impact),
+              images: Array.isArray(imageCaptions) && imageCaptions.length > 0
+                ? v.images.map((img, idx) => ({
+                    ...img,
+                    caption: imageCaptions[idx] || img.caption
+                  }))
+                : v.images
+            };
+          })
+        );
+        if (json.fallback) {
+          showNotification('info', `✨ Narasi standar resmi CSIRT Kemenkes dimuat untuk ${vuln.name || 'temuan'}.`);
+        } else {
+          showNotification('success', `✨ AI berhasil menyusun deskripsi detail dari gambar screenshot untuk ${vuln.name || 'temuan'}!`);
+        }
+      } else {
+        showNotification('error', 'Gagal menghasilkan narasi dari gambar.');
+      }
+    } catch (err: any) {
+      showNotification('error', `Gagal menganalisis gambar: ${err.message || 'Koneksi terganggu'}`);
+    } finally {
+      setAnalyzingVulnIds(prev => ({ ...prev, [vulnId]: false }));
+    }
+  };
+
   // Local fallback using VULN_PRESETS
   const applyLocalNarrativesFallback = () => {
     const vulnNames = vulnerabilities.map(v => v.name).join(' dan ');
+    const cleanTargetUrl = (meta.targetUrl || 'target.kemkes.go.id').replace(/[\(\)]/g, '').trim();
     setMeta(prev => ({
       ...prev,
       executiveSummary:
         prev.executiveSummary ||
-        `Terdeteksi adanya beberapa potensi kerentanan yaitu ${vulnNames} pada aplikasi ${prev.appName} (${prev.targetUrl}). Temuan ini teridentifikasi selama pengujian keamanan sistem dan memerlukan penanganan serta mitigasi segera guna mencegah potensi kompromi akun, eskalasi serangan, atau pengungkapan data secara tidak sah.`,
+        `Terdeteksi adanya beberapa potensi kerentanan yaitu **${vulnNames}** pada aplikasi ${prev.appName} (**${cleanTargetUrl}**). Temuan ini teridentifikasi selama pengujian keamanan sistem dan memerlukan penanganan serta mitigasi segera guna mencegah potensi kompromi akun, eskalasi serangan, atau pengungkapan data secara tidak sah.`,
       overallImpact:
         prev.overallImpact ||
         `Kerentanan yang teridentifikasi berpotensi membuka celah terhadap kerahasiaan (Confidentiality) dan integritas (Integrity) data pada aplikasi ${prev.appName}. Penggunaan konfigurasi keamanan yang tidak memadai dapat dimanfaatkan oleh pihak yang tidak berwenang untuk memperoleh akses tidak sah serta merusak reputasi layanan.`,
       conclusion:
         prev.conclusion ||
-        `Berdasarkan hasil pengujian keamanan yang telah dilakukan terhadap aplikasi ${prev.appName} (${prev.targetUrl}), teridentifikasi kerentanan ${vulnNames}. Disarankan untuk segera menerapkan langkah-langkah mitigasi dan perbaikan teknis sesuai rekomendasi yang tercantum pada laporan ini.`
+        `Berdasarkan hasil pengujian keamanan yang telah dilakukan terhadap aplikasi ${prev.appName} (**${cleanTargetUrl}**), teridentifikasi kerentanan **${vulnNames}**. Disarankan untuk segera menerapkan langkah-langkah mitigasi dan perbaikan teknis sesuai rekomendasi yang tercantum pada laporan ini.`
     }));
 
     setVulnerabilities(prev =>
@@ -438,10 +524,14 @@ export default function VulnReportTab() {
             <ShieldAlert className="w-6 h-6" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-lg font-bold text-white">Notifikasi Kerentanan (Word .docx Report)</h1>
               <span className="px-2 py-0.5 text-[11px] font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-full">
                 CSIRT Standard
+              </span>
+              <span className="px-2 py-0.5 text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full flex items-center gap-1">
+                <Unlock className="w-3 h-3 text-emerald-400" />
+                Admin Unlocked
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -451,6 +541,18 @@ export default function VulnReportTab() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+          {onLockAdmin && (
+            <button
+              onClick={onLockAdmin}
+              type="button"
+              className="px-3 py-2 text-xs font-semibold bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 rounded-lg border border-amber-500/30 transition flex items-center gap-1.5 shadow-sm"
+              title="Kunci kembali menu ini untuk keamanan"
+            >
+              <Lock className="w-3.5 h-3.5 text-amber-400" />
+              Kunci Akses Admin
+            </button>
+          )}
+
           <button
             onClick={handleLoadSampleAspak}
             type="button"
@@ -459,16 +561,6 @@ export default function VulnReportTab() {
           >
             <Shield className="w-3.5 h-3.5 text-indigo-400" />
             Contoh: Aplikasi Aspak (Resmi)
-          </button>
-
-          <button
-            onClick={handleLoadSampleSihepi}
-            type="button"
-            className="px-3 py-2 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 transition flex items-center gap-1.5 shadow-sm"
-            title="Muat contoh lengkap Notifikasi SIHEPI (Weak Password & IDOR)"
-          >
-            <FileText className="w-3.5 h-3.5 text-amber-400" />
-            Contoh SIHEPI
           </button>
 
           <button
@@ -965,14 +1057,28 @@ export default function VulnReportTab() {
                               onChange={e => handleImageUpload(vuln.id, e.target.files)}
                             />
 
-                            <button
-                              type="button"
-                              onClick={() => fileInputRefs.current[vuln.id]?.click()}
-                              className="px-3 py-1.5 text-xs font-semibold bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-md transition flex items-center gap-1.5"
-                            >
-                              <Upload className="w-3.5 h-3.5" />
-                              + Upload Screenshot PoC
-                            </button>
+                            <div className="flex items-center gap-2">
+                              {vuln.images.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleGeneratePoCFromImages(vuln.id)}
+                                  disabled={analyzingVulnIds[vuln.id]}
+                                  className="px-3 py-1.5 text-xs font-semibold bg-purple-600/25 hover:bg-purple-600/40 text-purple-200 border border-purple-500/40 rounded-md transition flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+                                  title="AI otomatis menganalisis gambar screenshot dan menyusun deskripsi detail PoC"
+                                >
+                                  <Sparkles className={`w-3.5 h-3.5 ${analyzingVulnIds[vuln.id] ? 'animate-spin text-purple-300' : 'text-purple-400'}`} />
+                                  {analyzingVulnIds[vuln.id] ? 'AI Menganalisis Gambar...' : '✨ AI Generate Deskripsi dari Gambar'}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => fileInputRefs.current[vuln.id]?.click()}
+                                className="px-3 py-1.5 text-xs font-semibold bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-md transition flex items-center gap-1.5"
+                              >
+                                <Upload className="w-3.5 h-3.5" />
+                                + Upload Screenshot PoC
+                              </button>
+                            </div>
                           </div>
 
                           {/* Images Grid */}
@@ -986,7 +1092,7 @@ export default function VulnReportTab() {
                                 Klik atau seret tangkapan layar PoC (PNG/JPG) ke sini
                               </p>
                               <span className="text-[10px] text-slate-600">
-                                Gambar akan disematkan secara rapi ke dalam dokumen Word dengan caption otomatis.
+                                Gambar akan disematkan secara rapi ke dalam dokumen Word dan AI dapat langsung menganalisis detail gambar secara otomatis.
                               </span>
                             </div>
                           ) : (
@@ -1013,9 +1119,21 @@ export default function VulnReportTab() {
                                   </div>
 
                                   <div className="flex flex-col gap-1">
-                                    <label className="text-[10px] text-slate-400 font-medium">
-                                      Caption Gambar (muncul di bawah gambar Word):
-                                    </label>
+                                    <div className="flex items-center justify-between">
+                                      <label className="text-[10px] text-slate-400 font-medium">
+                                        Caption Gambar (muncul di bawah gambar Word):
+                                      </label>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleGeneratePoCFromImages(vuln.id)}
+                                        disabled={analyzingVulnIds[vuln.id]}
+                                        className="text-[10px] font-semibold text-purple-400 hover:text-purple-300 flex items-center gap-1 transition"
+                                        title="AI menganalisis detail gambar ini"
+                                      >
+                                        <Sparkles className="w-2.5 h-2.5" />
+                                        AI Analisis Gambar
+                                      </button>
+                                    </div>
                                     <input
                                       type="text"
                                       value={img.caption}
@@ -1057,11 +1175,24 @@ export default function VulnReportTab() {
                             </div>
 
                             <div>
-                              <label className="block text-slate-400 font-medium mb-1">
-                                Narasi Langkah Pengujian (PoC Narrative):
-                              </label>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <label className="block text-slate-400 font-medium">
+                                  Narasi Langkah Pengujian (PoC Narrative):
+                                </label>
+                                {vuln.images.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleGeneratePoCFromImages(vuln.id)}
+                                    disabled={analyzingVulnIds[vuln.id]}
+                                    className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 rounded transition disabled:opacity-50"
+                                  >
+                                    <Sparkles className={`w-3 h-3 ${analyzingVulnIds[vuln.id] ? 'animate-spin' : 'text-purple-400'}`} />
+                                    {analyzingVulnIds[vuln.id] ? 'AI Menganalisis...' : '✨ AI Generate Deskripsi dari Gambar'}
+                                  </button>
+                                )}
+                              </div>
                               <textarea
-                                rows={4}
+                                rows={5}
                                 value={vuln.pocNarrative || ''}
                                 onChange={e => {
                                   const text = e.target.value;
@@ -1069,9 +1200,12 @@ export default function VulnReportTab() {
                                     prev.map(v => (v.id === vuln.id ? { ...v, pocNarrative: text } : v))
                                   );
                                 }}
-                                placeholder="Jelaskan alur pengujian yang merujuk pada Gambar 3.x.y di atas..."
+                                placeholder="Jelaskan alur pengujian detail yang merujuk pada Gambar 3.x.y di atas..."
                                 className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-slate-300 focus:outline-none focus:border-indigo-500 text-xs leading-relaxed"
                               />
+                              <p className="text-[10px] text-slate-500 mt-1">
+                                💡 Format detail resmi CSIRT: AI membaca langsung bukti di gambar (URL, kolom form, nama berkas internal/Index of, tombol, respon) dan menyusun narasi pengujian secara mendalam.
+                              </p>
                             </div>
 
                             <div>
@@ -1209,7 +1343,7 @@ export default function VulnReportTab() {
               <div>
                 <p
                   style={{ fontFamily: "'Times New Roman', Times, serif", fontSize: '24px' }}
-                  className="text-[#4472C4] font-bold leading-snug drop-shadow-sm max-w-lg"
+                  className="text-[#4472C4] font-normal leading-snug drop-shadow-sm max-w-lg"
                 >
                   {meta.appName.startsWith('Aplikasi ') ? meta.appName : `Aplikasi ${meta.appName}`}
                 </p>
@@ -1219,13 +1353,13 @@ export default function VulnReportTab() {
               <div className="flex items-center gap-10 sm:gap-14 flex-wrap">
                 <p
                   style={{ fontFamily: "'Times New Roman', Times, serif", fontSize: '24px' }}
-                  className="text-[#4472C4] font-bold tracking-wide drop-shadow-sm leading-normal shrink-0"
+                  className="text-[#4472C4] font-normal tracking-wide drop-shadow-sm leading-normal shrink-0"
                 >
                   {meta.docNumber}
                 </p>
                 <p
                   style={{ fontFamily: "'Times New Roman', Times, serif", fontSize: '24px' }}
-                  className="text-[#4472C4] font-bold tracking-wide drop-shadow-sm leading-normal shrink-0"
+                  className="text-[#4472C4] font-normal tracking-wide drop-shadow-sm leading-normal shrink-0"
                 >
                   {meta.reportDate}
                 </p>
@@ -1247,62 +1381,7 @@ export default function VulnReportTab() {
             </div>
           </div>
 
-          {/* PAGE 2: DAFTAR ISI PREVIEW */}
-          <div className="bg-white text-slate-900 rounded-xl p-8 sm:p-12 shadow-2xl border border-slate-700 space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-200 pb-3 text-xs text-slate-500">
-              <span className="font-semibold text-slate-600">CSIRT Kemenkes RI - Notifikasi Kerentanan</span>
-              <span className="bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded text-[11px]">
-                {meta.tlp}
-              </span>
-            </div>
-
-            <div className="text-center pt-2 pb-4">
-              <h2 className="text-lg font-bold text-slate-900 tracking-wide">Daftar Isi</h2>
-            </div>
-
-            <div className="space-y-1 text-xs text-slate-800 max-w-xl mx-auto font-sans">
-              <div className="flex justify-between items-baseline font-bold border-b border-dotted border-slate-300 pb-0.5">
-                <span>Notifikasi Kerentanan</span>
-                <span>2</span>
-              </div>
-              <div className="flex justify-between items-baseline font-bold border-b border-dotted border-slate-300 pb-0.5">
-                <span>1. Ringkasan Eksekutif</span>
-                <span>2</span>
-              </div>
-              <div className="flex justify-between items-baseline font-bold border-b border-dotted border-slate-300 pb-0.5">
-                <span>2. Kerentanan</span>
-                <span>2</span>
-              </div>
-              <div className="flex justify-between items-baseline font-bold border-b border-dotted border-slate-300 pb-0.5">
-                <span>3. PoC</span>
-                <span>2</span>
-              </div>
-              {vulnerabilities.map((v, idx) => (
-                <div key={v.id} className="flex justify-between items-baseline font-bold pl-6 border-b border-dotted border-slate-300 pb-0.5 text-slate-900">
-                  <span>3.{idx + 1} {v.name}</span>
-                  <span>3</span>
-                </div>
-              ))}
-              <div className="flex justify-between items-baseline font-bold border-b border-dotted border-slate-300 pb-0.5">
-                <span>4. Dampak</span>
-                <span>3</span>
-              </div>
-              <div className="flex justify-between items-baseline font-bold border-b border-dotted border-slate-300 pb-0.5">
-                <span>5. Simpulan</span>
-                <span>3</span>
-              </div>
-              <div className="flex justify-between items-baseline font-bold border-b border-dotted border-slate-300 pb-0.5">
-                <span>6. Rekomendasi</span>
-                <span>3</span>
-              </div>
-            </div>
-
-            <div className="pt-6 text-left text-[10px] text-slate-400 font-mono">
-              Halaman 2 / Daftar Isi Resmi
-            </div>
-          </div>
-
-          {/* PAGE 3+: CONTENT PREVIEW */}
+          {/* PAGE 2+: CONTENT PREVIEW */}
           <div className="bg-white text-slate-900 rounded-xl p-8 sm:p-12 shadow-2xl border border-slate-700 space-y-6">
             {/* Document Header */}
             <div className="flex justify-between items-center border-b border-slate-200 pb-3 text-xs text-slate-500">
@@ -1321,35 +1400,37 @@ export default function VulnReportTab() {
             </div>
 
             {/* 1. Ringkasan Eksekutif */}
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="bg-[#B2B2B2] text-white px-3 py-1 font-bold text-sm rounded-sm">
                 1. Ringkasan Eksekutif
               </div>
-              <p className="text-xs text-slate-800 leading-[1.5] whitespace-pre-line text-justify pl-0">
-                {meta.executiveSummary ||
-                  `Terdeteksi adanya beberapa potensi kerentanan yaitu ${vulnerabilities
-                    .map(v => v.name)
-                    .join(' dan ')} pada aplikasi ${meta.appName} (${meta.targetUrl}).`}
+              <p className="text-xs text-slate-700 leading-[1.75] whitespace-pre-line text-justify">
+                {renderRichText(
+                  meta.executiveSummary ||
+                    `Terdeteksi adanya beberapa potensi kerentanan yaitu **${vulnerabilities
+                      .map(v => v.name)
+                      .join(' dan ')}** pada aplikasi ${meta.appName} (**${meta.targetUrl}**).`
+                )}
               </p>
             </div>
 
             {/* 2. Tabel Kerentanan */}
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="bg-[#B2B2B2] text-white px-3 py-1 font-bold text-sm rounded-sm">
                 2. Kerentanan
               </div>
-              <p className="text-xs text-slate-800 leading-[1.5] pl-0">
+              <p className="text-xs text-slate-700 leading-[1.75]">
                 Berikut endpoint atau path {meta.appName} yang rentan terhadap{' '}
                 {vulnerabilities.map(v => v.name).join(' dan ')}.
               </p>
 
-              <div className="overflow-x-auto pt-1">
+              <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border border-slate-300">
                   <thead className="bg-[#AEAAAA] text-white font-bold border-b border-slate-400">
                     <tr>
                       <th className="p-2 text-center w-12 border-r border-slate-300">No</th>
                       <th className="p-2 border-r border-slate-300">Kerentanan</th>
-                      <th className="p-2 border-r border-slate-300">Path/Endpoint</th>
+                      <th className="p-2 text-center border-r border-slate-300">Path/Endpoint</th>
                       <th className="p-2 text-center border-r border-slate-300">Risiko</th>
                       <th className="p-2 text-center border-r border-slate-300">OWASP</th>
                       <th className="p-2 text-center">Status</th>
@@ -1360,17 +1441,9 @@ export default function VulnReportTab() {
                       <tr key={v.id} className="hover:bg-slate-50">
                         <td className="p-2 text-center text-slate-600 border-r border-slate-200">{idx + 1}.</td>
                         <td className="p-2 font-medium text-slate-900 border-r border-slate-200">{v.name}</td>
-                        <td className="p-2 font-mono text-[11px] text-slate-800 border-r border-slate-200">{v.path}</td>
+                        <td className="p-2 text-center font-mono text-[11px] text-slate-800 border-r border-slate-200">{v.path}</td>
                         <td className="p-2 text-center border-r border-slate-200">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              v.severity === 'CRITICAL'
-                                ? 'bg-rose-100 text-rose-700'
-                                : v.severity === 'HIGH'
-                                ? 'bg-orange-100 text-orange-700'
-                                : 'bg-amber-100 text-amber-700'
-                            }`}
-                          >
+                          <span className="font-bold text-xs text-slate-900">
                             {v.severity}
                           </span>
                         </td>
@@ -1384,22 +1457,22 @@ export default function VulnReportTab() {
             </div>
 
             {/* 3. PoC */}
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div className="bg-[#B2B2B2] text-white px-3 py-1 font-bold text-sm rounded-sm">
                 3. PoC
               </div>
 
               {vulnerabilities.map((v, idx) => (
-                <div key={v.id} className="space-y-3 pt-1">
-                  {v.techDescription && (
-                    <p className="text-xs text-slate-800 leading-[1.5] whitespace-pre-line text-justify pl-0">
-                      {v.techDescription}
-                    </p>
-                  )}
-
+                <div key={v.id} className="space-y-3 pt-2">
                   <div className="bg-[#B2B2B2] text-white px-3 py-0.5 font-bold text-xs rounded-sm">
                     3.{idx + 1} {v.name}
                   </div>
+
+                  {v.techDescription && (
+                    <p className="text-xs text-slate-700 leading-[1.75] whitespace-pre-line text-justify">
+                      {v.techDescription}
+                    </p>
+                  )}
 
                   {/* Render Embedded Images */}
                   {v.images && v.images.length > 0 && (
@@ -1422,7 +1495,7 @@ export default function VulnReportTab() {
                   )}
 
                   {v.pocNarrative && (
-                    <p className="text-xs text-slate-800 leading-[1.5] whitespace-pre-line text-justify pl-0">
+                    <p className="text-xs text-slate-700 leading-[1.75] whitespace-pre-line text-justify">
                       {v.pocNarrative}
                     </p>
                   )}
@@ -1431,11 +1504,11 @@ export default function VulnReportTab() {
             </div>
 
             {/* 4. Dampak */}
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="bg-[#B2B2B2] text-white px-3 py-1 font-bold text-sm rounded-sm">
                 4. Dampak
               </div>
-              <p className="text-xs text-slate-800 leading-[1.5] whitespace-pre-line text-justify pl-0">
+              <p className="text-xs text-slate-700 leading-[1.75] whitespace-pre-line text-justify">
                 {meta.overallImpact ||
                   vulnerabilities.map(v => v.impact).filter(Boolean).join('\n\n') ||
                   'Kerentanan yang teridentifikasi berpotensi membuka celah terhadap kerahasiaan dan integritas data.'}
@@ -1443,11 +1516,12 @@ export default function VulnReportTab() {
             </div>
 
             {/* 5. Simpulan */}
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="bg-[#B2B2B2] text-white px-3 py-1 font-bold text-sm rounded-sm">
                 5. Simpulan
               </div>
-              <p className="text-xs text-slate-800 leading-[1.5] whitespace-pre-line text-justify pl-0">
+              <p className="text-xs text-slate-700 leading-[1.75]">Berikut kesimpulan dari notif insiden kerentanan ini.</p>
+              <p className="text-xs text-slate-700 leading-[1.75] whitespace-pre-line text-justify">
                 {meta.conclusion || 'Berdasarkan hasil pengujian keamanan, teridentifikasi celah kerentanan yang memerlukan mitigasi segera.'}
               </p>
             </div>
@@ -1457,12 +1531,12 @@ export default function VulnReportTab() {
               <div className="bg-[#B2B2B2] text-white px-3 py-1 font-bold text-sm rounded-sm">
                 6. Rekomendasi
               </div>
-              <p className="text-xs text-slate-700">Berikut ini adalah beberapa saran dan rekomendasi yang dapat kami berikan.</p>
+              <p className="text-xs text-slate-700 leading-[1.75]">Berikut ini adalah beberapa saran dan rekomendasi yang dapat kami berikan.</p>
 
               {vulnerabilities.length === 1 ? (
-                <ol className="list-decimal list-inside space-y-1.5 text-xs text-slate-700 pl-2">
+                <ol className="list-decimal list-inside space-y-2 text-xs text-slate-700 pl-2 leading-[1.75]">
                   {(vulnerabilities[0].recommendations || []).map((rec, rIdx) => (
-                    <li key={rIdx} className="leading-relaxed">
+                    <li key={rIdx} className="leading-[1.75]">
                       {rec.replace(/^\d+[\.\)]\s*/, '')}
                     </li>
                   ))}
@@ -1471,9 +1545,9 @@ export default function VulnReportTab() {
                 vulnerabilities.map(v => (
                   <div key={v.id} className="space-y-1.5 text-xs text-slate-800">
                     <div className="font-bold text-slate-900">Rekomendasi {v.name}:</div>
-                    <ol className="list-decimal list-inside space-y-1 text-slate-700 pl-2">
+                    <ol className="list-decimal list-inside space-y-2 text-slate-700 pl-2 leading-[1.75]">
                       {(v.recommendations || []).map((rec, rIdx) => (
-                        <li key={rIdx} className="leading-relaxed">
+                        <li key={rIdx} className="leading-[1.75]">
                           {rec.replace(/^\d+[\.\)]\s*/, '')}
                         </li>
                       ))}

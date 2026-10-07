@@ -20,8 +20,9 @@ export const VULN_PRESETS: Record<string, VulnPreset> = {
     techDescription: (appName, targetUrl, path) =>
       `Kerentanan Insecure Direct Object Reference (IDOR) pada aplikasi ${targetUrl} memungkinkan pengguna yang terautentikasi mengakses atau memanipulasi objek referensi internal (seperti ID pengguna, ID dokumen, atau nomor transaksi) secara langsung pada parameter permintaan tanpa adanya validasi otorisasi di sisi server. Kondisi ini dapat dimanfaatkan oleh penyerang untuk melihat, mengubah, atau menghapus data milik pengguna lain secara tidak sah, yang membuka peluang terjadinya kebocoran informasi sensitif, perusakan integritas data, hingga eskalasi hak akses di dalam sistem.`,
     pocNarrative: (appName, targetUrl, path, captions) => {
-      const cap1 = captions[0] || 'Tampilan halaman identifikasi parameter ID pada URL';
-      return `Pada ${cap1}, terlihat parameter ID pada URL yang digunakan untuk mengakses data pengguna pada endpoint ${path}. Setelah nilai ID diubah secara manual, aplikasi tetap memberikan akses dan menampilkan data pengguna lain yang seharusnya tidak dapat diakses oleh akun tersebut. Kondisi ini menunjukkan bahwa aplikasi belum menerapkan validasi dan verifikasi hak akses terhadap objek yang diminta, sehingga berpotensi memungkinkan pengguna yang tidak berwenang mengakses data pengguna lain.`;
+      const cap1 = captions[0] || 'Gambar 3.1.1 Tampilan halaman identifikasi parameter ID pada URL';
+      const cap2 = captions[1] || 'Gambar 3.1.2 Tampilan data pengguna lain yang berhasil diakses tanpa otorisasi';
+      return `Pada ${cap1}, terlihat parameter ID pada URL yang digunakan untuk mengakses data pengguna pada endpoint ${path} melalui peramban web. Pengujian ini dilakukan untuk mengetahui apakah aplikasi melakukan verifikasi hak kepemilikan data sebelum menyajikan informasi. Selanjutnya, pada ${cap2}, setelah nilai ID diubah secara manual menjadi identifier milik pengguna lain, sistem tetap memberikan akses dan menampilkan rincian data pribadi pengguna lain tersebut tanpa verifikasi hak akses di sisi server. Kondisi tersebut menunjukkan bahwa aplikasi belum menerapkan mekanisme otorisasi objek yang memadai, sehingga pihak yang tidak berhak dapat mengakses data pengguna lain.`;
     },
     impact: (appName) =>
       `Kerentanan Insecure Direct Object Reference (IDOR) berpotensi memungkinkan pengguna yang tidak memiliki kewenangan untuk mengakses objek atau data milik pengguna lain melalui manipulasi referensi objek. Kondisi ini dapat mengakibatkan pengungkapan atau modifikasi data secara tidak sah serta meningkatkan risiko terhadap kerahasiaan dan integritas data dalam aplikasi ${appName}.`,
@@ -41,9 +42,9 @@ export const VULN_PRESETS: Record<string, VulnPreset> = {
     techDescription: (appName, targetUrl, path) =>
       `Kerentanan Weak Password Requirements pada aplikasi ${targetUrl} memungkinkan pengguna mendaftarkan atau memperbarui kata sandi menggunakan kombinasi yang sangat sederhana tanpa adanya validasi kompleksitas maupun batasan panjang minimum dari sistem. Kondisi ini dapat dimanfaatkan oleh penyerang untuk melakukan serangan berbasis tebakan kredensial seperti brute-force atau dictionary attack secara efektif, yang membuka peluang terjadinya pengambilalihan akun (account takeover), akses tidak sah ke dalam fitur internal aplikasi, hingga kompromi data sensitif pengguna atau hak akses administratif.`,
     pocNarrative: (appName, targetUrl, path, captions) => {
-      const cap1 = captions[0] || 'Tampilan halaman proses enumerasi username';
-      const cap2 = captions[1] || 'Tampilan halaman aplikasi berhasil login menggunakan kredensial default';
-      return `Pada ${cap1}, dilakukan proses enumerasi pada portal terkait untuk mengidentifikasi informasi username yang berpotensi digunakan sebagai kredensial. Username yang diperoleh kemudian digunakan untuk melakukan pengujian autentikasi pada website ${targetUrl} menggunakan password default yang diduga masih berlaku. Pada ${cap2}, hasil pengujian menunjukkan bahwa proses login berhasil dilakukan menggunakan kredensial tersebut, sehingga pengguna dapat memperoleh akses ke dalam aplikasi. Kondisi tersebut menunjukkan bahwa penerapan kebijakan password dan mekanisme autentikasi pada aplikasi masih belum memadai.`;
+      const cap1 = captions[0] || 'Gambar 3.1.1 Tampilan proses enumerasi username pada portal autentikasi';
+      const cap2 = captions[1] || 'Gambar 3.1.2 Tampilan aplikasi berhasil login menggunakan kredensial default';
+      return `Pada ${cap1}, dilakukan proses enumerasi pada portal terkait untuk mengidentifikasi informasi username yang berpotensi digunakan sebagai kredensial pada portal ${targetUrl}. Username yang diperoleh kemudian digunakan untuk melakukan pengujian autentikasi menggunakan password default yang diduga masih berlaku. Selanjutnya, pada ${cap2}, hasil pengujian menunjukkan bahwa proses login berhasil dilakukan menggunakan kredensial tersebut dan sistem menampilkan menu navigasi utama serta data akun. Kondisi tersebut menunjukkan bahwa penerapan kebijakan password dan mekanisme autentikasi pada aplikasi masih belum memadai.`;
     },
     impact: (appName) =>
       `Kerentanan Weak Password Requirements dapat meningkatkan risiko kredensial pengguna ditebak atau disalahgunakan oleh pihak yang tidak berwenang. Penggunaan password default atau password yang lemah dapat memungkinkan akses tidak sah ke dalam aplikasi dan informasi yang tersedia pada akun tersebut. Kondisi ini berpotensi menyebabkan pengungkapan data, penyalahgunaan akun, serta meningkatkan risiko terjadinya serangan lanjutan terhadap sistem ${appName}.`,
@@ -65,8 +66,8 @@ export const VULN_PRESETS: Record<string, VulnPreset> = {
     techDescription: (appName, targetUrl, path) =>
       `Kerentanan Directory Listing pada web server ${targetUrl} terjadi akibat konfigurasi server yang mengizinkan penjelajahan indeks direktori (Index of /) ketika berkas indeks default (seperti index.html atau index.php) tidak ditemukan pada suatu direktori. Hal ini memungkinkan pengguna atau penyerang untuk melihat struktur berkas, berkas konfigurasi cadangan, dokumen unggahan pengguna, serta informasi internal lainnya secara bebas.`,
     pocNarrative: (appName, targetUrl, path, captions) => {
-      const cap1 = captions[0] || 'Tampilan daftar berkas direktori terbuka (Index of)';
-      return `Pada ${cap1}, dilakukan pengujian dengan mengakses direktori ${path} pada ${targetUrl}. Web server merespons dengan menampilkan daftar berkas secara terbuka (Directory Indexing). Penguji dapat melihat berkas-berkas sensitif dan mengunduhnya secara langsung tanpa proses otentikasi maupun otorisasi.`;
+      const cap1 = captions[0] || 'Gambar 3.1.1 Directory Listing pada path /files';
+      return `Pada ${cap1}, dilakukan pengujian terhadap web server aplikasi ${targetUrl} dengan mengakses path direktori ${path} secara langsung melalui peramban web. Pengujian ini dilakukan untuk mengetahui apakah web server menerapkan mekanisme proteksi akses direktori atau mengizinkan pengindeksan direktori secara terbuka. Berdasarkan hasil pengujian pada ${cap1}, web server menampilkan halaman 'Index of ${path}' secara publik lengkap dengan daftar file internal seperti Parent Directory dan dokumen file internal (daftar_akd.pdf) beserta informasi tanggal modifikasi serta ukuran file. Kondisi tersebut menunjukkan bahwa web server tidak menonaktifkan fitur directory indexing, sehingga pihak yang tidak berwenang dapat melihat struktur folder dan mengunduh berkas internal tanpa melalui proses autentikasi atau otorisasi semestinya.`;
     },
     impact: (appName) =>
       `Kelemahan Directory Listing mempermudah penyerang dalam melakukan pengintaian (reconnaissance), mengidentifikasi berkas konfigurasi rahasia, source code backup (.bak / .old), serta dokumen sensitif yang tersimpan pada aplikasi ${appName}. Informasi yang terungkap dapat digunakan sebagai dasar melancarkan serangan lanjutan yang lebih berbahaya.`,
@@ -86,8 +87,9 @@ export const VULN_PRESETS: Record<string, VulnPreset> = {
     techDescription: (appName, targetUrl, path) =>
       `Kerentanan Broken Access Control pada aplikasi ${targetUrl} terjadi ketika pembatasan terhadap apa yang diizinkan dilakukan oleh pengguna yang diautentikasi tidak ditegakkan dengan benar. Akibatnya, penyerang dapat mengeksploitasi kelemahan ini untuk mengakses fungsionalitas administratif, melihat data pengguna lain, mengubah konfigurasi sistem, atau memodifikasi data tanpa otorisasi yang sah.`,
     pocNarrative: (appName, targetUrl, path, captions) => {
-      const cap1 = captions[0] || 'Tampilan pengujian akses fitur admin dengan hak akses pengguna biasa';
-      return `Pada ${cap1}, dilakukan pengujian dengan masuk menggunakan akun berhak akses rendah (regular user), kemudian mencoba mengakses endpoint dengan privilege tinggi pada ${path}. Sistem mengizinkan akses ke fungsi tersebut tanpa memvalidasi role atau kepemilikan hak administratif pengguna.`;
+      const cap1 = captions[0] || 'Gambar 3.1.1 Tampilan pengujian akses fitur admin dengan hak akses pengguna biasa';
+      const cap2 = captions[1] || 'Gambar 3.1.2 Tampilan modul administratif yang berhasil diakses tanpa otorisasi';
+      return `Pada ${cap1}, dilakukan pengujian dengan masuk menggunakan akun berhak akses rendah (regular user), kemudian mencoba mengakses endpoint dengan privilege tinggi pada ${path}. Pengujian ini bertujuan untuk memverifikasi keandalan penegakan hak akses pada level aplikasi. Selanjutnya, pada ${cap2}, sistem mengizinkan akses ke fungsi tersebut dan menampilkan modul kontrol administratif tanpa memvalidasi role atau kepemilikan hak administratif pengguna. Kondisi tersebut menunjukkan bahwa sistem belum menerapkan kontrol otorisasi yang memadai di sisi server.`;
     },
     impact: (appName) =>
       `Dapat mengakibatkan eskalasi hak akses (Privilege Escalation), pengungkapan data administratif rahasia, manipulasi basis data, serta potensi pengambilalihan kendali operasional atas aplikasi ${appName}.`,
@@ -107,8 +109,9 @@ export const VULN_PRESETS: Record<string, VulnPreset> = {
     techDescription: (appName, targetUrl, path) =>
       `Kerentanan HTML Injection terjadi ketika aplikasi ${targetUrl} menerima input dari pengguna yang mengandung tag HTML dan merendernya kembali ke antarmuka web tanpa proses sanitasi atau encoding yang memadai. Penyerang dapat menyisipkan elemen HTML berbahaya untuk memodifikasi tampilan halaman atau melakukan defacement visual dan phishing form.`,
     pocNarrative: (appName, targetUrl, path, captions) => {
-      const cap1 = captions[0] || 'Tampilan form input yang diinjeksi elemen HTML';
-      return `Pada ${cap1}, dilakukan pengujian dengan mengirimkan payload tag HTML pada parameter input di endpoint ${path}. Aplikasi merender elemen HTML tersebut secara langsung pada halaman hasil tanpa melakukan HTML entity encoding.`;
+      const cap1 = captions[0] || 'Gambar 3.1.1 Tampilan form input yang disisipkan elemen tag HTML';
+      const cap2 = captions[1] || 'Gambar 3.1.2 Tampilan halaman web yang merender elemen HTML tiruan';
+      return `Pada ${cap1}, dilakukan pengujian terhadap penanganan input pada halaman ${targetUrl} (${path}) dengan memasukkan payload tag HTML khusus pada kolom input formulir. Pengujian ini dilakukan untuk memastikan apakah aplikasi menerapkan sanitasi dan encoding terhadap karakter khusus HTML sebelum menyajikan data kembali ke peramban. Selanjutnya, pada ${cap2}, halaman web merender elemen HTML tersebut secara utuh tanpa proses encoding entitas HTML. Kondisi tersebut menunjukkan bahwa aplikasi rentan terhadap HTML Injection, yang berpotensi dimanfaatkan oleh penyerang untuk memanipulasi tampilan antarmuka (defacement) maupun melakukan rekayasa sosial dan pencurian kredensial (credential harvesting).`;
     },
     impact: (appName) =>
       `Penyerang dapat mengubah tampilan visual halaman web, menyisipkan form login palsu untuk mencuri kredensial pengguna (credential harvesting), serta menyesatkan pengguna resmi aplikasi ${appName}.`,
@@ -128,8 +131,9 @@ export const VULN_PRESETS: Record<string, VulnPreset> = {
     techDescription: (appName, targetUrl, path) =>
       `Kerentanan Cross-Site Scripting (XSS) Reflected pada aplikasi ${targetUrl} terjadi ketika aplikasi menerima data dalam permintaan HTTP dan menyertakan data tersebut ke dalam respons langsung tanpa validasi atau encoding yang tepat. Skrip berbahaya dieksekusi di browser korban saat korban membuka tautan khusus yang dirancang oleh penyerang.`,
     pocNarrative: (appName, targetUrl, path, captions) => {
-      const cap1 = captions[0] || 'Tampilan eksekusi skrip JavaScript pada browser korban';
-      return `Pada ${cap1}, dilakukan pengujian dengan menyisipkan payload JavaScript (misal: alert atau document.cookie) ke dalam parameter URL pada endpoint ${path}. Ketika tautan tersebut diakses, payload dieksekusi langsung oleh browser dalam konteks sesi pengguna.`;
+      const cap1 = captions[0] || 'Gambar 3.1.1 Tampilan pengiriman payload JavaScript pada parameter URL';
+      const cap2 = captions[1] || 'Gambar 3.1.2 Tampilan kotak dialog eksekusi skrip JavaScript pada peramban web';
+      return `Pada ${cap1}, dilakukan pengujian keamanan terhadap parameter masukan pada ${targetUrl} (${path}) dengan menyisipkan payload skrip JavaScript seperti <script>alert(document.domain)</script> pada parameter URL peramban. Pengujian ini bertujuan untuk menguji ada tidaknya validasi masukan serta context-aware output encoding pada respon server. Selanjutnya, pada ${cap2}, saat tautan tersebut diakses, peramban mengeksekusi skrip tersebut secara langsung dan memunculkan kotak dialog dengan domain target. Kondisi tersebut membuktikan bahwa aplikasi rentan terhadap Reflected Cross-Site Scripting (XSS), yang memungkinkan penyerang mencuri token sesi pengguna (session hijacking) dan membajak interaksi pengguna pada aplikasi.`;
     },
     impact: (appName) =>
       `Penyerang dapat mencuri sesi login (session hijacking), token autentikasi, mengarahkan korban ke situs berbahaya, serta melakukan aksi atas nama korban pada aplikasi ${appName}.`,
@@ -149,8 +153,9 @@ export const VULN_PRESETS: Record<string, VulnPreset> = {
     techDescription: (appName, targetUrl, path) =>
       `Kerentanan Cross-Site Scripting (XSS) Stored (Persistent) terjadi ketika input berbahaya dari pengguna disimpan secara permanen di basis data server ${targetUrl} dan kemudian ditampilkan kembali ke pengguna lain tanpa sanitasi. Ini merupakan bentuk XSS yang paling berbahaya karena dapat menginfeksi siapa pun yang melihat halaman tersebut.`,
     pocNarrative: (appName, targetUrl, path, captions) => {
-      const cap1 = captions[0] || 'Tampilan payload tersimpan di database dan tereksekusi otomatis';
-      return `Pada ${cap1}, penguji menyisipkan skrip JavaScript ke dalam kolom profil/komentar pada endpoint ${path}. Skrip tersimpan di database dan dieksekusi secara otomatis setiap kali halaman tersebut dikunjungi oleh pengguna lain atau administrator.`;
+      const cap1 = captions[0] || 'Gambar 3.1.1 Tampilan formulir penyimpanan data yang disisipkan payload JavaScript';
+      const cap2 = captions[1] || 'Gambar 3.1.2 Tampilan eksekusi otomatis skrip JavaScript saat halaman diakses kembali';
+      return `Pada ${cap1}, penguji menyisipkan payload skrip JavaScript berbahaya ke dalam kolom data tersimpan pada halaman ${targetUrl} (${path}). Pengujian ini dilakukan untuk mengetahui apakah input pengguna disanitasi secara ketat sebelum disimpan ke dalam basis data aplikasi. Selanjutnya, pada ${cap2}, ketika halaman tersebut dibuka kembali oleh pengguna lain atau akun pengelola, sistem merender data tersebut tanpa sanitasi sehingga skrip tereksekusi secara otomatis di latar belakang peramban korban. Kondisi tersebut membuktikan adanya celah Stored Cross-Site Scripting (Persistent XSS) yang berisiko tinggi terhadap kompromi akun massal dan manipulasi data aplikasi.`;
     },
     impact: (appName) =>
       `Memungkinkan kompromi akun massal, worm XSS, pencurian data sensitif secara pasif, serta modifikasi konten aplikasi ${appName} bagi seluruh pengguna yang mengakses halaman tersebut.`,
@@ -170,8 +175,9 @@ export const VULN_PRESETS: Record<string, VulnPreset> = {
     techDescription: (appName, targetUrl, path) =>
       `Kerentanan Sensitive Data Exposure pada aplikasi ${targetUrl} terjadi ketika data sensitif seperti Nomor Induk Kependudukan (NIK), rekam medis, alamat surel, nomor telepon, atau token otentikasi dikirimkan atau disimpan tanpa enkripsi yang memadai, atau terekspos secara terbuka melalui respons API publik.`,
     pocNarrative: (appName, targetUrl, path, captions) => {
-      const cap1 = captions[0] || 'Tampilan respon API yang mengekspos data pribadi sensitif (PII)';
-      return `Pada ${cap1}, dilakukan peninjauan respons jaringan pada endpoint ${path}. Ditemukan bahwa respons API menyertakan data sensitif pengguna (seperti informasi pribadi dan data medis) dalam bentuk plaintext tanpa adanya masking atau pembatasan field.`;
+      const cap1 = captions[0] || 'Gambar 3.1.1 Tampilan respon permintaan jaringan pada Developer Tools';
+      const cap2 = captions[1] || 'Gambar 3.1.2 Tampilan kebocoran data pribadi sensitif dalam format JSON';
+      return `Pada ${cap1}, dilakukan peninjauan lalu lintas jaringan (network traffic inspection) pada aplikasi ${targetUrl} saat mengakses endpoint ${path} melalui peramban web. Pengujian ini bertujuan untuk mengidentifikasi apakah transmisi data telah menerapkan prinsip perlindungan data pribadi dan pembatasan informasi minimum. Selanjutnya, pada ${cap2}, analisis terhadap payload respon JSON menunjukkan adanya data pribadi sensitif (seperti NIK, nama lengkap, riwayat medis, dan token otorisasi) yang disajikan dalam bentuk plaintext tanpa proses enkripsi maupun penyamaran data (masking). Kondisi tersebut menunjukkan pelanggaran terhadap prinsip pelindungan data pribadi (UU PDP) yang dapat dimanfaatkan oleh pihak ketiga untuk pencurian identitas.`;
     },
     impact: (appName) =>
       `Melanggar kepatuhan Undang-Undang Pelindungan Data Pribadi (UU PDP), menyebabkan kebocoran informasi identitas pengguna, serta menurunkan reputasi dan kredibilitas instansi pengelola ${appName}.`,
@@ -195,9 +201,9 @@ export const SAMPLE_ASPAK_REPORT = {
     signerRole: 'Ketua Tim Kerja Penyelenggaraan Layanan Tim Tanggap Insiden Siber (CSIRT) dan Pelindungan Data Pribadi (PDP),',
     signerName: 'Istiqomah, SS, MKM',
     signaturePlaceholder: '${ttd_pengirim}',
-    executiveSummary: `Terdeteksi adanya beberapa potensi kerentanan yaitu Directory Listing pada aplikasi Aspak (aspak.kemkes.go.id).\n\nKerentanan Directory Listing terjadi ketika informasi sensitif, seperti data pribadi, kredensial, token autentikasi, atau konfigurasi internal sistem, dapat diakses oleh pihak yang tidak berwenang akibat lemahnya mekanisme perlindungan data.`,
+    executiveSummary: `Terdeteksi adanya beberapa potensi kerentanan yaitu **Directory Listing** pada aplikasi Aspak (**aspak.kemkes.go.id**).\n\nKerentanan Directory Listing terjadi ketika informasi sensitif, seperti data pribadi, kredensial, token autentikasi, atau konfigurasi internal sistem, dapat diakses oleh pihak yang tidak berwenang akibat lemahnya mekanisme perlindungan data.`,
     overallImpact: `Kerentanan Directory Listing menyebabkan penyerang yang dapat melihat informasi file yang ada dalam sebuah direktori/ folder. Hal ini dapat menjadi sangat fatal jika di dalam folder tersebut terdapat file seperti file upload, backup config, file sensitif lainnya didalam directory tersebut.`,
-    conclusion: `Berikut kesimpulan dari notif insiden kerentanan ini.\n\nBerdasarkan hasil pengujian keamanan yang telah dilakukan terhadap aplikasi Aspak (aspak.kemkes.go.id), teridentifikasi Kerentanan Directory Listing.\n\nKerentanan Directory Listing ini berpotensi mengungkapkan struktur direktori maupun file sensitif, yang dapat dimanfaatkan oleh pihak yang tidak berwenang untuk memperoleh informasi terkait sistem dan berpotensi digunakan sebagai langkah awal dalam proses eksploitasi lebih lanjut terhadap aplikasi.`
+    conclusion: `Berikut kesimpulan dari notif insiden kerentanan ini.\n\nBerdasarkan hasil pengujian keamanan yang telah dilakukan terhadap aplikasi Aspak (**aspak.kemkes.go.id**), teridentifikasi Kerentanan **Directory Listing**.\n\nKerentanan Directory Listing ini berpotensi mengungkapkan struktur direktori maupun file sensitif, yang dapat dimanfaatkan oleh pihak yang tidak berwenang untuk memperoleh informasi terkait sistem dan berpotensi digunakan sebagai langkah awal dalam proses eksploitasi lebih lanjut terhadap aplikasi.`
   },
   vulnerabilities: [
     {
@@ -208,7 +214,7 @@ export const SAMPLE_ASPAK_REPORT = {
       owasp: 'A02:2025',
       status: 'OPEN' as const,
       techDescription: `Kerentanan Directory Listing pada aplikasi aspak.kemkes.go.id memungkinkan siapa saja untuk melihat daftar file dan direktori yang tersedia. Hal ini berpotensi mengekspos file sensitif seperti file backup dan file lain yang dapat dimanfaatkan oleh penyerang untuk mendapatkan akses tidak sah atau informasi berharga tentang sistem.`,
-      pocNarrative: `Berdasarkan hasil pengujian, pada Gambar 3.1.1 kerentanan pada web server dimana direktori atau folder dapat diakses langsung oleh pengguna tanpa pembatasan. Hal ini menyebabkan daftar file dan folder pada server ditampilkan di browser, sehingga informasi sensitif berpotensi terekspos dan dapat dimanfaatkan oleh penyerang untuk melakukan serangan lanjutan`,
+      pocNarrative: `Pada Gambar 3.1.1, dilakukan pengujian terhadap web server aplikasi aspak.kemkes.go.id dengan mengakses path direktori /files secara langsung melalui peramban web. Pengujian ini dilakukan untuk mengetahui apakah web server menerapkan mekanisme proteksi akses direktori atau mengizinkan pengindeksan direktori secara terbuka. Berdasarkan hasil pengujian pada Gambar 3.1.1, web server menampilkan halaman 'Index of /files' secara publik lengkap dengan daftar file internal seperti Parent Directory dan dokumen file internal (daftar_akd.pdf) beserta informasi tanggal modifikasi serta ukuran file. Kondisi tersebut menunjukkan bahwa web server tidak menonaktifkan fitur directory indexing, sehingga pihak yang tidak berwenang dapat melihat struktur folder dan mengunduh berkas internal tanpa melalui proses autentikasi atau otorisasi semestinya.`,
       impact: `Kerentanan Directory Listing menyebabkan penyerang yang dapat melihat informasi file yang ada dalam sebuah direktori/ folder. Hal ini dapat menjadi sangat fatal jika di dalam folder tersebut terdapat file seperti file upload, backup config, file sensitif lainnya didalam directory tersebut.`,
       recommendations: [
         'Mengatur hak akses agar membatasi akses ke file sensitif.',
@@ -218,93 +224,10 @@ export const SAMPLE_ASPAK_REPORT = {
         {
           id: 'img-aspak-1',
           dataUrl: '/sample-poc/aspak_poc.jpeg',
-          caption: 'Gambar 3.1.1 Directory Listing pada path /files'
+          caption: 'Gambar 3.1.1 Directory Listing pada path /files menampilkan Index of /files dan dokumen internal daftar_akd.pdf'
         }
       ]
     }
   ]
 };
 
-export const SAMPLE_SIHEPI_REPORT = {
-  meta: {
-    docNumber: '58A.NR.092026',
-    docTitle: '58A. Notifikasi Report - Aplikasi SIHEPI',
-    appName: 'Aplikasi SIHEPI',
-    targetUrl: 'sihepi.kemkes.go.id',
-    reportDate: '21 September 2026',
-    tlp: 'TLP : AMBER' as const,
-    instansi: 'Tim Tanggap Insiden Siber (CSIRT) dan Pelindungan Data Pribadi (PDP) - Kementerian Kesehatan',
-    signerRole: 'Ketua Tim Kerja Penyelenggaraan Layanan Tim Tanggap Insiden Siber (CSIRT) dan Pelindungan Data Pribadi (PDP)',
-    signerName: 'Istiqomah, SS, MKM',
-    signaturePlaceholder: '${ttd_pengirim}',
-    executiveSummary: `Terdeteksi adanya beberapa potensi kerentanan yaitu Weak Password Requirements dan Insecure Direct Object Reference (IDOR) pada aplikasi SIHEPI (sihepi.kemkes.go.id).
-
-Kerentanan Weak Password Requirements menunjukkan bahwa sistem menerapkan kebijakan kata sandi yang lemah, sehingga meningkatkan risiko akses tidak sah, enumerasi, dan pengungkapan informasi internal. Kondisi ini dapat meningkatkan potensi kompromi akun dan serangan lanjutan terhadap sistem.
-
-Kerentanan Insecure Direct Object Reference (IDOR) terjadi ketika pengguna dapat mengakses objek atau data secara langsung tanpa proses verifikasi hak akses yang memadai, sehingga berpotensi mengakses data yang seharusnya tidak dapat diakses. Kondisi ini dapat menyebabkan pengungkapan atau manipulasi data secara tidak sah.`,
-    overallImpact: `Kerentanan Weak Password Requirements dapat meningkatkan risiko kredensial pengguna ditebak atau disalahgunakan oleh pihak yang tidak berwenang. Penggunaan password default atau password yang lemah dapat memungkinkan akses tidak sah ke dalam aplikasi dan informasi yang tersedia pada akun tersebut. Kondisi ini berpotensi menyebabkan pengungkapan data, penyalahgunaan akun, serta meningkatkan risiko terjadinya serangan lanjutan terhadap sistem.
-
-Kerentanan Insecure Direct Object Reference (IDOR) berpotensi memungkinkan pengguna yang tidak memiliki kewenangan untuk mengakses objek atau data milik pengguna lain melalui manipulasi referensi objek. Kondisi ini dapat mengakibatkan pengungkapan atau modifikasi data secara tidak sah serta meningkatkan risiko terhadap kerahasiaan dan integritas data dalam aplikasi SIHEPI.`,
-    conclusion: `Berikut kesimpulan dari notif insiden kerentanan ini. Berdasarkan hasil pengujian keamanan yang telah dilakukan terhadap aplikasi SIHEPI (sihepi.kemkes.go.id), teridentifikasi kerentanan Weak Password Requirements dan Insecure Direct Object Reference (IDOR).
-
-Kerentanan Weak Password Requirements menunjukkan bahwa penerapan kebijakan password pada aplikasi masih belum memadai, sehingga meningkatkan risiko penggunaan kredensial default atau password yang lemah untuk memperoleh akses tidak sah ke dalam aplikasi.
-
-Kerentanan Insecure Direct Object Reference (IDOR) menunjukkan bahwa aplikasi belum menerapkan verifikasi hak akses yang memadai terhadap objek yang diminta, sehingga pengguna berpotensi mengakses atau memodifikasi data yang berada di luar kewenangannya.`
-  },
-  vulnerabilities: [
-    {
-      id: 'vuln-1',
-      name: 'Weak Password Requirements',
-      path: '/',
-      severity: 'CRITICAL' as const,
-      owasp: 'A03:2025',
-      status: 'OPEN' as const,
-      techDescription: `Kerentanan Weak Password Requirements pada aplikasi sihepi.kemkes.go.id memungkinkan pengguna mendaftarkan atau memperbarui kata sandi menggunakan kombinasi yang sangat sederhana tanpa adanya validasi kompleksitas maupun batasan panjang minimum dari sistem. Kondisi ini dapat dimanfaatkan oleh penyerang untuk melakukan serangan berbasis tebakan kredensial seperti brute-force atau dictionary attack secara efektif, yang membuka peluang terjadinya pengambilalihan akun (account takeover), akses tidak sah ke dalam fitur internal aplikasi, hingga kompromi data sensitif pengguna atau hak akses administratif.`,
-      pocNarrative: `Pada Gambar 3.1.1, dilakukan proses enumerasi pada website data.sitb.id untuk mengidentifikasi informasi username yang berpotensi digunakan sebagai kredensial. Username yang diperoleh kemudian digunakan untuk melakukan pengujian autentikasi pada website sihepi.kemkes.go.id menggunakan password default yang diduga masih berlaku.
-
-Pada Gambar 3.1.2, hasil pengujian menunjukkan bahwa proses login berhasil dilakukan menggunakan kredensial tersebut, sehingga pengguna dapat memperoleh akses ke dalam aplikasi. Kondisi tersebut menunjukkan bahwa penerapan kebijakan password dan mekanisme autentikasi pada aplikasi masih belum memadai, sehingga kredensial default berpotensi disalahgunakan oleh pihak yang tidak berwenang untuk memperoleh akses ke sistem dan mengakses informasi sesuai dengan hak akses akun yang berhasil digunakan.`,
-      impact: `Kerentanan Weak Password Requirements dapat meningkatkan risiko kredensial pengguna ditebak atau disalahgunakan oleh pihak yang tidak berwenang. Penggunaan password default atau password yang lemah dapat memungkinkan akses tidak sah ke dalam aplikasi dan informasi yang tersedia pada akun tersebut. Kondisi ini berpotensi menyebabkan pengungkapan data, penyalahgunaan akun, serta meningkatkan risiko terjadinya serangan lanjutan terhadap sistem.`,
-      recommendations: [
-        'Terapkan password policy, seperti penggunaan kombinasi angka, huruf, simbol, dengan minimal 8 karakter.',
-        'Pastikan semua akun mengganti kata sandi jika masih menggunakan kata sandi default dan lakukan penerapan 2FA / CAPTCHA.',
-        'Terapkan sistem force password reset saat login berikutnya untuk akun – akun yang menggunakan password lemah dan jadwalkan force password change secara berkala (misalnya setiap 3 atau 6 bulan).',
-        'Terapkan idle timeout yang otomatis mengeluarkan pengguna setelah tidak aktif selama 15 – 30 menit serta absolute timeout yang membatasi sesi maksimal, misalnya dalam 24 jam meskipun pengguna masih aktif.',
-        'Pastikan setiap pengguna hanya memiliki akses sesuai kebutuhan (Least Privilege).'
-      ],
-      images: [
-        {
-          id: 'img-1',
-          dataUrl: '/sample-poc/image2.png',
-          caption: 'Gambar 3.1.1 Tampilan halaman data.sitb.id untuk melakukan enumerasi dan memperoleh username'
-        },
-        {
-          id: 'img-2',
-          dataUrl: '/sample-poc/image3.png',
-          caption: 'Gambar 3.1.2 Tampilan halaman website sihepi berhasil login menggunakan password default'
-        }
-      ]
-    },
-    {
-      id: 'vuln-2',
-      name: 'Insecure Direct Object Reference (IDOR)',
-      path: '/new_pasiens/edit/*',
-      severity: 'CRITICAL' as const,
-      owasp: 'A01:2025',
-      status: 'OPEN' as const,
-      techDescription: `Kerentanan Insecure Direct Object Reference (IDOR) pada aplikasi sihepi.kemkes.go.id memungkinkan pengguna yang terautentikasi mengakses atau memanipulasi objek referensi internal (seperti ID pengguna, ID dokumen, atau nomor transaksi) secara langsung pada parameter permintaan tanpa adanya validasi otorisasi di sisi server. Kondisi ini dapat dimanfaatkan oleh penyerang untuk melihat, mengubah, atau menghapus data milik pengguna lain secara tidak sah, yang membuka peluang terjadinya kebocoran informasi sensitif, perusakan integritas data, hingga eskalasi hak akses di dalam sistem.`,
-      pocNarrative: `Pada Gambar 3.2.1 terlihat parameter ID pada URL yang digunakan untuk mengakses data pengguna. Setelah nilai ID diubah secara manual, aplikasi tetap memberikan akses dan menampilkan data pengguna lain yang seharusnya tidak dapat diakses oleh akun tersebut. Kondisi ini menunjukkan bahwa aplikasi belum menerapkan validasi dan verifikasi hak akses terhadap objek yang diminta, sehingga berpotensi memungkinkan pengguna yang tidak berwenang mengakses data pengguna lain.`,
-      impact: `Kerentanan Insecure Direct Object Reference (IDOR) berpotensi memungkinkan pengguna yang tidak memiliki kewenangan untuk mengakses objek atau data milik pengguna lain melalui manipulasi referensi objek. Kondisi ini dapat mengakibatkan pengungkapan atau modifikasi data secara tidak sah serta meningkatkan risiko terhadap kerahasiaan dan integritas data dalam aplikasi.`,
-      recommendations: [
-        'Pastikan bahwa setiap permintaan yang menggunakan parameter seperti ID diverifikasi terlebih dahulu untuk memastikan pengguna yang melakukan permintaan memiliki hak akses terhadap data tersebut.',
-        'Terapkan kontrol akses untuk memastikan bahwa pengguna hanya dapat mengakses data yang memang menjadi kewenangannya.'
-      ],
-      images: [
-        {
-          id: 'img-3',
-          dataUrl: '/sample-poc/image4.png',
-          caption: 'Gambar 3.2.1 Tampilan halaman Identifikasi parameter ID pada URL.'
-        }
-      ]
-    }
-  ]
-};

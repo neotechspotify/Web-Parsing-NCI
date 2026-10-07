@@ -1,7 +1,5 @@
 Dear Team AAL,
 
-Noted : IP source tersebut sudah kami block dari EDL.
-
 Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
 
 ===============================
@@ -9,7 +7,7 @@ Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilak
 Sec. Event : {event_type}
 Signature : {event_name}
 Severity : {magnitude}
-Action : Allowed
+Action : {action}
 Waktu Deteksi : {tanggal}, {waktu}
 
 ===============================

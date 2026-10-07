@@ -49,53 +49,75 @@ function escapeXml(str: string): string {
 
 /**
  * Creates standard justified paragraph
+ * Supports markdown **bold** syntax to create bold text runs within the paragraph.
+ * Configured with line spacing 1.5 lines (360 dxa) and Before: 0pt, After: 0pt as shown in Gambar 4.
+ * Ruler starts flush at position 0 (no indentation) as shown in Gambar 3.
  */
-function createPara(text: string, options?: { bold?: boolean; align?: 'left' | 'center' | 'both' | 'right'; size?: number; color?: string; spacingAfter?: number; spacingBefore?: number; line?: number; indent?: number }): string {
+function createPara(text: string, options?: { bold?: boolean; align?: 'left' | 'center' | 'both' | 'right'; size?: number; color?: string; spacingBefore?: number; spacingAfter?: number; line?: number; indent?: number }): string {
   const align = options?.align || 'both';
-  const size = options?.size || 22; // 11pt Arial
-  const spacingAfter = options?.spacingAfter ?? 0; // 0 pt as requested in Gambar 4
-  const spacingBefore = options?.spacingBefore ?? 0; // 0 pt as requested in Gambar 4
-  const line = options?.line ?? 360; // 1.5 lines line spacing as requested in Gambar 4
-  const boldTag = options?.bold ? '<w:b/><w:bCs/>' : '';
+  const size = options?.size || 22; // 11pt
+  const spacingBefore = options?.spacingBefore ?? 0; // 0 pt as in Gambar 4
+  const spacingAfter = options?.spacingAfter ?? 0;   // 0 pt as in Gambar 4
+  const line = options?.line ?? 360;                 // 1.5 lines as in Gambar 4
+  const defaultBold = !!options?.bold;
   const colorTag = options?.color ? `<w:color w:val="${options.color}"/>` : '';
-  // Consistent ruler indentation: 0 dxa default so ruler is aligned and neat across all body paragraphs
-  const indTag = options?.indent !== undefined ? `<w:ind w:left="${options.indent}"/>` : '<w:ind w:left="0" w:right="0"/>';
+  const indTag = options?.indent !== undefined ? `<w:ind w:left="${options.indent}"/>` : '';
 
-  return `<w:p><w:pPr><w:spacing w:before="${spacingBefore}" w:after="${spacingAfter}" w:line="${line}" w:lineRule="auto"/>${indTag}<w:jc w:val="${align}"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>${boldTag}${colorTag}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>${boldTag}${colorTag}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
+  // Parse text for **bold** markdown tokens if present
+  let runsXml = '';
+  if (text.includes('**')) {
+    const parts = text.split(/(\*\*[^*]+\*\*)/g);
+    for (const part of parts) {
+      if (!part) continue;
+      const isBold = part.startsWith('**') && part.endsWith('**');
+      const cleanText = isBold ? part.slice(2, -2) : part;
+      const bTag = (isBold || defaultBold) ? '<w:b/><w:bCs/>' : '';
+      runsXml += `<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>${bTag}${colorTag}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr><w:t xml:space="preserve">${escapeXml(cleanText)}</w:t></w:r>`;
+    }
+  } else {
+    const boldTag = defaultBold ? '<w:b/><w:bCs/>' : '';
+    runsXml = `<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>${boldTag}${colorTag}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>`;
+  }
+
+  return `<w:p><w:pPr><w:spacing w:before="${spacingBefore}" w:after="${spacingAfter}" w:line="${line}" w:lineRule="auto"/>${indTag}<w:jc w:val="${align}"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr></w:pPr>${runsXml}</w:p>`;
 }
 
 /**
  * Creates the official Kemenkes CSIRT ribbon header (Grey background #B2B2B2 with bold white text)
- * Supports ilvl=0 for main sections (1. Ringkasan Eksekutif, 2. Kerentanan, etc.)
- * and ilvl=1 for subsections (3.1 Directory Listing)
+ * Configured with ruler at position 0 (flush left margin, identical to body paragraphs) without numPr/ListParagraph list indentation.
  */
-function createRibbonHeader(title: string, bookmarkId?: number, ilvl: number = 0): string {
+function createRibbonHeader(title: string, bookmarkId?: number, ilvl: number = 0, sectionNumber?: string): string {
   const bmStart = bookmarkId ? `<w:bookmarkStart w:id="${bookmarkId}" w:name="_Toc${bookmarkId}"/>` : '';
   const bmEnd = bookmarkId ? `<w:bookmarkEnd w:id="${bookmarkId}"/>` : '';
   const outlineLvl = ilvl === 0 ? 1 : 2;
 
-  return `<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="18"/></w:numPr><w:shd w:val="clear" w:color="auto" w:fill="B2B2B2"/><w:tabs><w:tab w:val="left" w:pos="7797"/></w:tabs><w:spacing w:line="360" w:lineRule="auto"/><w:jc w:val="left"/><w:outlineLvl w:val="${outlineLvl}"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:color w:val="FFFFFF" w:themeColor="background1"/></w:rPr></w:pPr>${bmStart}<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:color w:val="FFFFFF" w:themeColor="background1"/></w:rPr><w:t xml:space="preserve">${escapeXml(title)}</w:t></w:r>${bmEnd}</w:p>`;
+  let displayTitle = title;
+  if (sectionNumber && !displayTitle.startsWith(sectionNumber)) {
+    displayTitle = `${sectionNumber} ${displayTitle}`;
+  }
+
+  return `<w:p><w:pPr><w:shd w:val="clear" w:color="auto" w:fill="B2B2B2"/><w:spacing w:before="120" w:after="120" w:line="360" w:lineRule="auto"/><w:ind w:left="0" w:firstLine="0" w:hanging="0"/><w:jc w:val="left"/><w:outlineLvl w:val="${outlineLvl}"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:bCs/><w:color w:val="FFFFFF" w:themeColor="background1"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr>${bmStart}<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:bCs/><w:color w:val="FFFFFF" w:themeColor="background1"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve">${escapeXml(displayTitle)}</w:t></w:r>${bmEnd}</w:p>`;
 }
 
 /**
- * Creates an official recommendation list item (indented at 1134 dxa with list numbering and 1.5 line spacing)
+ * Creates an official recommendation list item (indented at 720 dxa with list numbering and 1.5 line spacing)
  */
 function createRecommendationItem(text: string): string {
-  return `<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="39"/></w:numPr><w:spacing w:before="0" w:after="0" w:line="360" w:lineRule="auto"/><w:ind w:left="1134"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
+  return `<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="39"/></w:numPr><w:spacing w:before="0" w:after="0" w:line="360" w:lineRule="auto"/><w:ind w:left="720"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
 }
 
 /**
- * Creates the official CSIRT right-aligned signer block (indented at 5670 dxa with 1.5 line spacing)
+ * Creates the official CSIRT right-aligned signer block (indented at 5670 dxa)
  */
 function createSignerBlock(role: string, placeholder: string, name: string): string {
   let xml = '';
-  xml += `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="360" w:lineRule="auto"/><w:ind w:left="5670"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve">${escapeXml(role)}</w:t></w:r></w:p>`;
-  xml += `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="360" w:lineRule="auto"/><w:ind w:left="5670"/><w:jc w:val="both"/></w:pPr></w:p>`;
-  xml += `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="360" w:lineRule="auto"/><w:ind w:left="5670"/><w:jc w:val="both"/></w:pPr></w:p>`;
-  xml += `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="360" w:lineRule="auto"/><w:ind w:left="5670"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:color w:val="595959"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:color w:val="595959"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve">${escapeXml(placeholder)}</w:t></w:r></w:p>`;
-  xml += `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="360" w:lineRule="auto"/><w:ind w:left="5670"/><w:jc w:val="both"/></w:pPr></w:p>`;
-  xml += `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="360" w:lineRule="auto"/><w:ind w:left="5670"/><w:jc w:val="both"/></w:pPr></w:p>`;
-  xml += `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="360" w:lineRule="auto"/><w:ind w:left="5670"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve">${escapeXml(name)}</w:t></w:r></w:p>`;
+  xml += `<w:p><w:pPr><w:spacing w:line="276" w:lineRule="auto"/><w:ind w:left="5670"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve">${escapeXml(role)}</w:t></w:r></w:p>`;
+  xml += `<w:p><w:pPr><w:spacing w:line="276" w:lineRule="auto"/><w:ind w:left="5670"/><w:jc w:val="both"/></w:pPr></w:p>`;
+  xml += `<w:p><w:pPr><w:spacing w:line="276" w:lineRule="auto"/><w:ind w:left="5670"/><w:jc w:val="both"/></w:pPr></w:p>`;
+  xml += `<w:p><w:pPr><w:spacing w:line="276" w:lineRule="auto"/><w:ind w:left="5670"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:color w:val="595959"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:color w:val="595959"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve">${escapeXml(placeholder)}</w:t></w:r></w:p>`;
+  xml += `<w:p><w:pPr><w:spacing w:line="276" w:lineRule="auto"/><w:ind w:left="5670"/><w:jc w:val="both"/></w:pPr></w:p>`;
+  xml += `<w:p><w:pPr><w:spacing w:line="276" w:lineRule="auto"/><w:ind w:left="5670"/><w:jc w:val="both"/></w:pPr></w:p>`;
+  xml += `<w:p><w:pPr><w:spacing w:line="276" w:lineRule="auto"/><w:ind w:left="5670"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve">${escapeXml(name)}</w:t></w:r></w:p>`;
   return xml;
 }
 
@@ -134,11 +156,11 @@ function createVulnTable(vulnerabilities: VulnerabilityItem[]): string {
     // Col 2: Kerentanan
     rowsXml += `<w:tc><w:tcPr><w:tcW w:w="${colWidths[1]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:line="276" w:lineRule="auto"/><w:jc w:val="left"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t>${escapeXml(v.name)}</w:t></w:r></w:p></w:tc>`;
 
-    // Col 3: Path/Endpoint
-    rowsXml += `<w:tc><w:tcPr><w:tcW w:w="${colWidths[2]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:line="276" w:lineRule="auto"/><w:jc w:val="left"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t>${escapeXml(v.path || '/')}</w:t></w:r></w:p></w:tc>`;
+    // Col 3: Path/Endpoint (Center aligned as requested)
+    rowsXml += `<w:tc><w:tcPr><w:tcW w:w="${colWidths[2]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:line="276" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t>${escapeXml(v.path || '/')}</w:t></w:r></w:p></w:tc>`;
 
-    // Col 4: Risiko (Bold)
-    rowsXml += `<w:tc><w:tcPr><w:tcW w:w="${colWidths[3]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:line="276" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:bCs/><w:sz w:val="22"/><w:szCs w:val="22"/><w:color w:val="${sevColor}"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:bCs/><w:sz w:val="22"/><w:szCs w:val="22"/><w:color w:val="${sevColor}"/></w:rPr><w:t>${escapeXml(v.severity)}</w:t></w:r></w:p></w:tc>`;
+    // Col 4: Risiko (Black Bold only, no color, as requested)
+    rowsXml += `<w:tc><w:tcPr><w:tcW w:w="${colWidths[3]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:line="276" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:bCs/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:bCs/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t>${escapeXml(v.severity)}</w:t></w:r></w:p></w:tc>`;
 
     // Col 5: OWASP
     rowsXml += `<w:tc><w:tcPr><w:tcW w:w="${colWidths[4]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:line="276" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t>${escapeXml(v.owasp || 'A00:2025')}</w:t></w:r></w:p></w:tc>`;
@@ -246,11 +268,11 @@ function buildTocEntriesXml(vulnerabilities: VulnerabilityItem[]): string {
   // 3. PoC
   xml += `<w:p><w:pPr><w:pStyle w:val="TOC2"/><w:tabs><w:tab w:val="left" w:pos="960"/><w:tab w:val="right" w:leader="dot" w:pos="9062"/></w:tabs><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:pPr><w:hyperlink w:anchor="_Toc4" w:history="1"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/></w:rPr><w:t>3.</w:t></w:r><w:r><w:tab/></w:r><w:r><w:rPr><w:rStyle w:val="Hyperlink"/><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/></w:rPr><w:t>PoC</w:t></w:r><w:r><w:tab/><w:fldChar w:fldCharType="begin"/><w:instrText xml:space="preserve"> PAGEREF _Toc4 \\h </w:instrText><w:fldChar w:fldCharType="separate"/><w:t>2</w:t><w:fldChar w:fldCharType="end"/></w:r></w:hyperlink></w:p>`;
 
-  // 3.1, 3.2 ... Sub-items (bold as requested in Gambar 1)
+  // 3.1, 3.2 ... Sub-items (Bolded as requested in Gambar 1)
   vulnerabilities.forEach((v, idx) => {
     const subNum = `3.${idx + 1}`;
     const bmId = 40 + idx;
-    xml += `<w:p><w:pPr><w:pStyle w:val="TOC3"/><w:tabs><w:tab w:val="left" w:pos="1200"/><w:tab w:val="right" w:leader="dot" w:pos="9062"/></w:tabs><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:bCs/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:pPr><w:hyperlink w:anchor="_Toc${bmId}" w:history="1"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:bCs/></w:rPr><w:t>${subNum}</w:t></w:r><w:r><w:tab/></w:r><w:r><w:rPr><w:rStyle w:val="Hyperlink"/><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:bCs/></w:rPr><w:t>${escapeXml(v.name)}</w:t></w:r><w:r><w:tab/><w:fldChar w:fldCharType="begin"/><w:instrText xml:space="preserve"> PAGEREF _Toc${bmId} \\h </w:instrText><w:fldChar w:fldCharType="separate"/><w:t>3</w:t><w:fldChar w:fldCharType="end"/></w:r></w:hyperlink></w:p>`;
+    xml += `<w:p><w:pPr><w:pStyle w:val="TOC3"/><w:tabs><w:tab w:val="left" w:pos="1440"/><w:tab w:val="right" w:leader="dot" w:pos="9062"/></w:tabs><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:bCs/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:pPr><w:hyperlink w:anchor="_Toc${bmId}" w:history="1"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:bCs/></w:rPr><w:t>${subNum}</w:t></w:r><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:tab/></w:r><w:r><w:rPr><w:rStyle w:val="Hyperlink"/><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:bCs/></w:rPr><w:t>${escapeXml(v.name)}</w:t></w:r><w:r><w:tab/><w:fldChar w:fldCharType="begin"/><w:instrText xml:space="preserve"> PAGEREF _Toc${bmId} \\h </w:instrText><w:fldChar w:fldCharType="separate"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:bCs/></w:rPr><w:t>3</w:t><w:fldChar w:fldCharType="end"/></w:r></w:hyperlink></w:p>`;
   });
 
   // 4. Dampak
@@ -283,23 +305,26 @@ export async function generateOfficialDocxFromTemplate(
 
   // 1. UPDATE COVER PAGE:
   // The template has 4 text boxes in the cover: Date, DocNum, AppName, TLP
-  const appDisplayName = data.appName.startsWith('Aplikasi ') ? data.appName : `Aplikasi ${data.appName}`;
-  const targetDate = data.date || '24 September 2026';
-  const targetDocNum = data.docNumber || '62A.NR.092026';
-  const targetTlp = data.tlp || 'TLP : AMBER';
+  const rawData: any = data || {};
+  const metaObj = rawData.meta || {};
+  const appName = rawData.appName || metaObj.appName || 'Aplikasi Target';
+  const appDisplayName = appName.startsWith('Aplikasi ') ? appName : `Aplikasi ${appName}`;
+  const targetDate = rawData.date || metaObj.reportDate || metaObj.date || '24 September 2026';
+  const targetDocNum = rawData.docNumber || metaObj.docNumber || '62A.NR.092026';
+  const targetTlp = rawData.tlp || metaObj.tlp || 'TLP : AMBER';
 
   // Replace textboxes in cover:
   let txbxCount = 0;
   docXml = docXml.replace(/<wps:txbx>[\s\S]*?<\/wps:txbx>/g, (match) => {
     txbxCount++;
     if (txbxCount === 1) { // Date
-      return `<wps:txbx><w:txbxContent><w:p><w:pPr><w:spacing w:line="360" w:lineRule="auto"/><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:b/><w:bCs/><w:color w:val="4472C4" w:themeColor="accent1"/><w:sz w:val="48"/><w:szCs w:val="48"/><w14:shadow w14:blurRad="38100" w14:dist="19050" w14:dir="2700000" w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="tl"><w14:schemeClr w14:val="dk1"><w14:alpha w14:val="60000"/></w14:schemeClr></w14:shadow><w14:textOutline w14:w="0" w14:cap="flat" w14:cmpd="sng" w14:algn="ctr"><w14:noFill/><w14:prstDash w14:val="solid"/><w14:round/></w14:textOutline></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:b/><w:bCs/><w:color w:val="4472C4" w:themeColor="accent1"/><w:sz w:val="48"/><w:szCs w:val="48"/><w14:shadow w14:blurRad="38100" w14:dist="19050" w14:dir="2700000" w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="tl"><w14:schemeClr w14:val="dk1"><w14:alpha w14:val="60000"/></w14:schemeClr></w14:shadow><w14:textOutline w14:w="0" w14:cap="flat" w14:cmpd="sng" w14:algn="ctr"><w14:noFill/><w14:prstDash w14:val="solid"/><w14:round/></w14:textOutline></w:rPr><w:t>${escapeXml(targetDate)}</w:t></w:r></w:p></w:txbxContent></wps:txbx>`;
+      return `<wps:txbx><w:txbxContent><w:p><w:pPr><w:spacing w:line="360" w:lineRule="auto"/><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:bCs/><w:color w:val="4472C4" w:themeColor="accent1"/><w:sz w:val="48"/><w:szCs w:val="48"/><w14:shadow w14:blurRad="38100" w14:dist="19050" w14:dir="2700000" w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="tl"><w14:schemeClr w14:val="dk1"><w14:alpha w14:val="60000"/></w14:schemeClr></w14:shadow><w14:textOutline w14:w="0" w14:cap="flat" w14:cmpd="sng" w14:algn="ctr"><w14:noFill/><w14:prstDash w14:val="solid"/><w14:round/></w14:textOutline></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:bCs/><w:color w:val="4472C4" w:themeColor="accent1"/><w:sz w:val="48"/><w:szCs w:val="48"/><w14:shadow w14:blurRad="38100" w14:dist="19050" w14:dir="2700000" w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="tl"><w14:schemeClr w14:val="dk1"><w14:alpha w14:val="60000"/></w14:schemeClr></w14:shadow><w14:textOutline w14:w="0" w14:cap="flat" w14:cmpd="sng" w14:algn="ctr"><w14:noFill/><w14:prstDash w14:val="solid"/><w14:round/></w14:textOutline></w:rPr><w:t>${escapeXml(targetDate)}</w:t></w:r></w:p></w:txbxContent></wps:txbx>`;
     }
     if (txbxCount === 2) { // DocNum
-      return `<wps:txbx><w:txbxContent><w:p><w:pPr><w:spacing w:line="360" w:lineRule="auto"/><w:jc w:val="left"/><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:b/><w:bCs/><w:color w:val="4472C4" w:themeColor="accent1"/><w:sz w:val="48"/><w:szCs w:val="48"/><w14:shadow w14:blurRad="38100" w14:dist="19050" w14:dir="2700000" w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="tl"><w14:schemeClr w14:val="dk1"><w14:alpha w14:val="60000"/></w14:schemeClr></w14:shadow><w14:textOutline w14:w="0" w14:cap="flat" w14:cmpd="sng" w14:algn="ctr"><w14:noFill/><w14:prstDash w14:val="solid"/><w14:round/></w14:textOutline></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:b/><w:bCs/><w:color w:val="4472C4" w:themeColor="accent1"/><w:sz w:val="48"/><w:szCs w:val="48"/><w14:shadow w14:blurRad="38100" w14:dist="19050" w14:dir="2700000" w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="tl"><w14:schemeClr w14:val="dk1"><w14:alpha w14:val="60000"/></w14:schemeClr></w14:shadow><w14:textOutline w14:w="0" w14:cap="flat" w14:cmpd="sng" w14:algn="ctr"><w14:noFill/><w14:prstDash w14:val="solid"/><w14:round/></w14:textOutline></w:rPr><w:t>${escapeXml(targetDocNum)}</w:t></w:r></w:p></w:txbxContent></wps:txbx>`;
+      return `<wps:txbx><w:txbxContent><w:p><w:pPr><w:spacing w:line="360" w:lineRule="auto"/><w:jc w:val="left"/><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:bCs/><w:color w:val="4472C4" w:themeColor="accent1"/><w:sz w:val="48"/><w:szCs w:val="48"/><w14:shadow w14:blurRad="38100" w14:dist="19050" w14:dir="2700000" w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="tl"><w14:schemeClr w14:val="dk1"><w14:alpha w14:val="60000"/></w14:schemeClr></w14:shadow><w14:textOutline w14:w="0" w14:cap="flat" w14:cmpd="sng" w14:algn="ctr"><w14:noFill/><w14:prstDash w14:val="solid"/><w14:round/></w14:textOutline></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:bCs/><w:color w:val="4472C4" w:themeColor="accent1"/><w:sz w:val="48"/><w:szCs w:val="48"/><w14:shadow w14:blurRad="38100" w14:dist="19050" w14:dir="2700000" w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="tl"><w14:schemeClr w14:val="dk1"><w14:alpha w14:val="60000"/></w14:schemeClr></w14:shadow><w14:textOutline w14:w="0" w14:cap="flat" w14:cmpd="sng" w14:algn="ctr"><w14:noFill/><w14:prstDash w14:val="solid"/><w14:round/></w14:textOutline></w:rPr><w:t>${escapeXml(targetDocNum)}</w:t></w:r></w:p></w:txbxContent></wps:txbx>`;
     }
     if (txbxCount === 3) { // AppName
-      return `<wps:txbx><w:txbxContent><w:p><w:pPr><w:spacing w:line="360" w:lineRule="auto"/><w:jc w:val="left"/><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:b/><w:bCs/><w:color w:val="4472C4" w:themeColor="accent1"/><w:sz w:val="48"/><w:szCs w:val="48"/><w14:shadow w14:blurRad="38100" w14:dist="19050" w14:dir="2700000" w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="tl"><w14:schemeClr w14:val="dk1"><w14:alpha w14:val="60000"/></w14:schemeClr></w14:shadow><w14:textOutline w14:w="0" w14:cap="flat" w14:cmpd="sng" w14:algn="ctr"><w14:noFill/><w14:prstDash w14:val="solid"/><w14:round/></w14:textOutline></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:b/><w:bCs/><w:color w:val="4472C4" w:themeColor="accent1"/><w:sz w:val="48"/><w:szCs w:val="48"/><w14:shadow w14:blurRad="38100" w14:dist="19050" w14:dir="2700000" w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="tl"><w14:schemeClr w14:val="dk1"><w14:alpha w14:val="60000"/></w14:schemeClr></w14:shadow><w14:textOutline w14:w="0" w14:cap="flat" w14:cmpd="sng" w14:algn="ctr"><w14:noFill/><w14:prstDash w14:val="solid"/><w14:round/></w14:textOutline></w:rPr><w:t>${escapeXml(appDisplayName)}</w:t></w:r></w:p></w:txbxContent></wps:txbx>`;
+      return `<wps:txbx><w:txbxContent><w:p><w:pPr><w:spacing w:line="360" w:lineRule="auto"/><w:jc w:val="left"/><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:bCs/><w:color w:val="4472C4" w:themeColor="accent1"/><w:sz w:val="48"/><w:szCs w:val="48"/><w14:shadow w14:blurRad="38100" w14:dist="19050" w14:dir="2700000" w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="tl"><w14:schemeClr w14:val="dk1"><w14:alpha w14:val="60000"/></w14:schemeClr></w14:shadow><w14:textOutline w14:w="0" w14:cap="flat" w14:cmpd="sng" w14:algn="ctr"><w14:noFill/><w14:prstDash w14:val="solid"/><w14:round/></w14:textOutline></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/><w:bCs/><w:color w:val="4472C4" w:themeColor="accent1"/><w:sz w:val="48"/><w:szCs w:val="48"/><w14:shadow w14:blurRad="38100" w14:dist="19050" w14:dir="2700000" w14:sx="100000" w14:sy="100000" w14:kx="0" w14:ky="0" w14:algn="tl"><w14:schemeClr w14:val="dk1"><w14:alpha w14:val="60000"/></w14:schemeClr></w14:shadow><w14:textOutline w14:w="0" w14:cap="flat" w14:cmpd="sng" w14:algn="ctr"><w14:noFill/><w14:prstDash w14:val="solid"/><w14:round/></w14:textOutline></w:rPr><w:t>${escapeXml(appDisplayName)}</w:t></w:r></w:p></w:txbxContent></wps:txbx>`;
     }
     if (txbxCount === 4) { // TLP
       return `<wps:txbx><w:txbxContent><w:p><w:pPr><w:rPr><w:b/><w:color w:val="FFBF00"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:color w:val="FFBF00"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr><w:t>${escapeXml(targetTlp)}</w:t></w:r></w:p></w:txbxContent></wps:txbx>`;
@@ -312,13 +337,13 @@ export async function generateOfficialDocxFromTemplate(
   docXml = docXml.replace(/<v:textbox[\s\S]*?<\/v:textbox>/g, (match) => {
     vCount++;
     if (vCount === 1) {
-      return `<v:textbox><w:txbxContent><w:p><w:pPr><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:bCs/><w:color w:val="4472C4"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:bCs/><w:color w:val="4472C4"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr><w:t>${escapeXml(targetDate)}</w:t></w:r></w:p></w:txbxContent></v:textbox>`;
+      return `<v:textbox><w:txbxContent><w:p><w:pPr><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:color w:val="4472C4"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:color w:val="4472C4"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr><w:t>${escapeXml(targetDate)}</w:t></w:r></w:p></w:txbxContent></v:textbox>`;
     }
     if (vCount === 2) {
-      return `<v:textbox><w:txbxContent><w:p><w:pPr><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:bCs/><w:color w:val="4472C4"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:bCs/><w:color w:val="4472C4"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr><w:t>${escapeXml(targetDocNum)}</w:t></w:r></w:p></w:txbxContent></v:textbox>`;
+      return `<v:textbox><w:txbxContent><w:p><w:pPr><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:color w:val="4472C4"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:color w:val="4472C4"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr><w:t>${escapeXml(targetDocNum)}</w:t></w:r></w:p></w:txbxContent></v:textbox>`;
     }
     if (vCount === 3) {
-      return `<v:textbox><w:txbxContent><w:p><w:pPr><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:bCs/><w:color w:val="4472C4"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:bCs/><w:color w:val="4472C4"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr><w:t>${escapeXml(appDisplayName)}</w:t></w:r></w:p></w:txbxContent></v:textbox>`;
+      return `<v:textbox><w:txbxContent><w:p><w:pPr><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:color w:val="4472C4"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:color w:val="4472C4"/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr><w:t>${escapeXml(appDisplayName)}</w:t></w:r></w:p></w:txbxContent></v:textbox>`;
     }
     if (vCount === 4) {
       return `<v:textbox><w:txbxContent><w:p><w:r><w:t>${escapeXml(targetTlp)}</w:t></w:r></w:p></w:txbxContent></v:textbox>`;
@@ -392,21 +417,38 @@ export async function generateOfficialDocxFromTemplate(
   bodyXml += `<w:p><w:pPr><w:spacing w:after="160"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/></w:rPr><w:t xml:space="preserve">${escapeXml(appDisplayName)}</w:t></w:r></w:p>`;
 
   // 1. Ringkasan Eksekutif
-  bodyXml += createRibbonHeader('Ringkasan Eksekutif', 2, 0);
-  const execSummary = data.executiveSummary || `Terdeteksi adanya beberapa potensi kerentanan yaitu ${data.vulnerabilities.map(v => v.name).join(' dan ')} pada aplikasi ${appDisplayName} (${data.targetUrl || 'target.kemkes.go.id'}). Temuan ini teridentifikasi selama pengujian keamanan sistem dan memerlukan penanganan serta mitigasi segera guna mencegah potensi kompromi akun, eskalasi serangan, atau pengungkapan data secara tidak sah.`;
+  bodyXml += createRibbonHeader('Ringkasan Eksekutif', 2, 0, '1.');
+  const execSummary = data.executiveSummary || `Terdeteksi adanya beberapa potensi kerentanan yaitu **${data.vulnerabilities.map(v => v.name).join(' dan ')}** pada aplikasi ${appDisplayName} (**${data.targetUrl || 'target.kemkes.go.id'}**). Temuan ini teridentifikasi selama pengujian keamanan sistem dan memerlukan penanganan serta mitigasi segera guna mencegah potensi kompromi akun, eskalasi serangan, atau pengungkapan data secara tidak sah.`;
+  const vulnNames = data.vulnerabilities.map(v => v.name);
   execSummary.split('\n\n').forEach(p => {
-    if (p.trim()) bodyXml += createPara(p.trim());
+    let pText = p.trim();
+    if (!pText) return;
+    // Auto bold vulnerability name and domain name in the introductory sentence if not already formatted with **
+    if (pText.includes('Terdeteksi adanya beberapa potensi kerentanan') || pText.includes('potensi kerentanan yaitu')) {
+      vulnNames.forEach(name => {
+        if (name && !pText.includes(`**${name}**`)) {
+          pText = pText.split(name).join(`**${name}**`);
+        }
+      });
+      if (data.targetUrl) {
+        const cleanUrl = data.targetUrl.replace(/[\(\)]/g, '').trim();
+        if (cleanUrl && !pText.includes(`**${cleanUrl}**`)) {
+          pText = pText.split(cleanUrl).join(`**${cleanUrl}**`);
+        }
+      }
+    }
+    bodyXml += createPara(pText);
   });
 
   // 2. Kerentanan
-  bodyXml += createRibbonHeader('Kerentanan', 3, 0);
+  bodyXml += createRibbonHeader('Kerentanan', 3, 0, '2.');
   const vulnListNames = data.vulnerabilities.map(v => v.name).join(' dan ');
   bodyXml += createPara(`Berikut endpoint atau path ${appDisplayName} yang rentan terhadap ${vulnListNames}.`);
   bodyXml += createVulnTable(data.vulnerabilities);
-  bodyXml += createPara('', { spacingAfter: 160 }); // spacing
+  bodyXml += createPara('', { spacingAfter: 120 }); // spacing
 
   // 3. PoC (Proof of Concept)
-  bodyXml += createRibbonHeader('PoC', 4, 0);
+  bodyXml += createRibbonHeader('PoC', 4, 0, '3.');
 
   // Vulnerability subsections
   for (let vIdx = 0; vIdx < data.vulnerabilities.length; vIdx++) {
@@ -414,15 +456,15 @@ export async function generateOfficialDocxFromTemplate(
     const subNum = `3.${vIdx + 1}`;
     const bmId = 40 + vIdx;
 
-    // Technical Description / intro before sub-ribbon
+    // Technical Description / intro before sub-ribbon (flush left at ruler 0)
     if (v.techDescription) {
       v.techDescription.split('\n\n').forEach(p => {
         if (p.trim()) bodyXml += createPara(p.trim());
       });
     }
 
-    // Subheading ribbon with vulnerability name (ilvl=1 automatically gives 3.1)
-    bodyXml += createRibbonHeader(v.name, bmId, 1);
+    // Subheading ribbon with vulnerability name (e.g. 3.1 Directory Listing)
+    bodyXml += createRibbonHeader(v.name, bmId, 1, subNum);
 
     // Embed Screenshot Images
     if (v.images && v.images.length > 0) {
@@ -461,7 +503,7 @@ export async function generateOfficialDocxFromTemplate(
       }
     }
 
-    // PoC Narrative
+    // PoC Narrative (flush left at ruler 0)
     if (v.pocNarrative) {
       v.pocNarrative.split('\n\n').forEach(p => {
         if (p.trim()) bodyXml += createPara(p.trim());
@@ -472,14 +514,14 @@ export async function generateOfficialDocxFromTemplate(
   }
 
   // 4. Dampak
-  bodyXml += createRibbonHeader('Dampak', 5, 0);
+  bodyXml += createRibbonHeader('Dampak', 5, 0, '4.');
   const overallImpact = data.overallImpact || data.vulnerabilities.map(v => v.impact).filter(Boolean).join('\n\n') || `Kerentanan yang teridentifikasi berpotensi membuka celah terhadap kerahasiaan (Confidentiality) dan integritas (Integrity) data pada aplikasi ${appDisplayName}.`;
   overallImpact.split('\n\n').forEach(p => {
     if (p.trim()) bodyXml += createPara(p.trim());
   });
 
   // 5. Simpulan
-  bodyXml += createRibbonHeader('Simpulan', 6, 0);
+  bodyXml += createRibbonHeader('Simpulan', 6, 0, '5.');
   const conclusionText = data.conclusion || `Berdasarkan hasil pengujian keamanan yang telah dilakukan terhadap aplikasi ${appDisplayName} (${data.targetUrl || 'target'}), teridentifikasi kerentanan ${vulnListNames}. Temuan ini memerlukan penanganan penutupan celah keamanan dan pembaruan konfigurasi sesuai rekomendasi yang diberikan.`;
   if (!conclusionText.trim().startsWith('Berikut kesimpulan')) {
     bodyXml += createPara('Berikut kesimpulan dari notif insiden kerentanan ini.');
@@ -489,7 +531,7 @@ export async function generateOfficialDocxFromTemplate(
   });
 
   // 6. Rekomendasi
-  bodyXml += createRibbonHeader('Rekomendasi', 7, 0);
+  bodyXml += createRibbonHeader('Rekomendasi', 7, 0, '6.');
   bodyXml += createPara('Berikut ini adalah beberapa saran dan rekomendasi yang dapat kami berikan.');
 
   if (data.vulnerabilities.length === 1) {

@@ -273,15 +273,33 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
   const [showAdminPinModal, setShowAdminPinModal] = useState<boolean>(false);
   const [adminPinInput, setAdminPinInput] = useState<string>('');
   const [adminPinError, setAdminPinError] = useState<string>('');
-  const [storedAdminPin, setStoredAdminPin] = useState<string>(() => localStorage.getItem('repo_admin_pin') || 'wisnuganteng');
+  const [storedAdminPin, setStoredAdminPin] = useState<string>(() => {
+    const rawPin = localStorage.getItem('repo_admin_pin');
+    return rawPin && rawPin !== 'admin' ? rawPin : 'wisnuganteng';
+  });
+
+  // Sync admin mode from global events
+  useEffect(() => {
+    const handleSync = () => {
+      setIsAdminUnlocked(localStorage.getItem('repo_admin_unlocked') === 'true');
+    };
+    window.addEventListener('admin_mode_changed', handleSync);
+    window.addEventListener('storage', handleSync);
+    return () => {
+      window.removeEventListener('admin_mode_changed', handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
+  }, []);
 
   // Verify PIN to Unlock Admin Mode
   const handleVerifyAdminPin = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const inputClean = adminPinInput.trim();
-    if (inputClean === storedAdminPin || inputClean === 'wisnuganteng' || inputClean === 'admin') {
+    if (inputClean === storedAdminPin || inputClean === 'wisnuganteng') {
       setIsAdminUnlocked(true);
       localStorage.setItem('repo_admin_unlocked', 'true');
+      localStorage.setItem('vuln_admin_unlocked', 'true');
+      window.dispatchEvent(new Event('admin_mode_changed'));
       setShowAdminPinModal(false);
       setAdminPinInput('');
       setAdminPinError('');
@@ -294,6 +312,8 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
   const handleLockAdminMode = () => {
     setIsAdminUnlocked(false);
     localStorage.setItem('repo_admin_unlocked', 'false');
+    localStorage.setItem('vuln_admin_unlocked', 'false');
+    window.dispatchEvent(new Event('admin_mode_changed'));
   };
 
   // Check if active selected instansi is locked (AAL, KEMKES, SOPHOS)

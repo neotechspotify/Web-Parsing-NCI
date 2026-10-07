@@ -45,6 +45,7 @@ import {
   ShieldAlert
 } from 'lucide-react';
 import VulnReportTab from './components/VulnReportTab';
+import VulnLockedView from './components/VulnLockedView';
 import companyLogo from './assets/images/nci_shield_white_bg_1783343904191.jpg'; 
 import { LogEvent, ProcessResult } from './types';
 import AalPivotVisualizer from './components/AalPivotVisualizer';
@@ -136,6 +137,62 @@ export default function App() {
   const [templates, setTemplates] = useState<Record<string, string[]>>({});
   const [loadingTemplates, setLoadingTemplates] = useState(false);
 
+  // Admin Mode states (Locks Vuln Report and Protected settings)
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => {
+    return localStorage.getItem('vuln_admin_unlocked') === 'true' && localStorage.getItem('repo_admin_unlocked') === 'true';
+  });
+  const [showAdminPinModal, setShowAdminPinModal] = useState<boolean>(false);
+  const [adminPinInput, setAdminPinInput] = useState<string>('');
+  const [adminPinError, setAdminPinError] = useState<string>('');
+  const [adminModalTitle, setAdminModalTitle] = useState<string>('Akses Terproteksi Mode Admin');
+  const [adminModalSubtitle, setAdminModalSubtitle] = useState<string>('Menu Notifikasi Kerentanan CSIRT berstatus sensitif. Masukkan PIN Admin untuk membuka akses menu ini.');
+  const [targetTabAfterUnlock, setTargetTabAfterUnlock] = useState<'vuln-report' | null>(null);
+
+  // Sync admin mode across components / events
+  useEffect(() => {
+    const handleSync = () => {
+      const isUnlocked = localStorage.getItem('vuln_admin_unlocked') === 'true' && localStorage.getItem('repo_admin_unlocked') === 'true';
+      setIsAdminUnlocked(isUnlocked);
+    };
+    window.addEventListener('admin_mode_changed', handleSync);
+    window.addEventListener('storage', handleSync);
+    return () => {
+      window.removeEventListener('admin_mode_changed', handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
+  }, []);
+
+  const handleVerifyAdminPin = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanInput = adminPinInput.trim();
+    const rawPin = localStorage.getItem('repo_admin_pin');
+    const storedPin = rawPin && rawPin !== 'admin' ? rawPin : 'wisnuganteng';
+    if (cleanInput === storedPin || cleanInput === 'wisnuganteng') {
+      setIsAdminUnlocked(true);
+      localStorage.setItem('vuln_admin_unlocked', 'true');
+      localStorage.setItem('repo_admin_unlocked', 'true');
+      window.dispatchEvent(new Event('admin_mode_changed'));
+      setShowAdminPinModal(false);
+      setAdminPinInput('');
+      setAdminPinError('');
+      if (targetTabAfterUnlock) {
+        setActiveTab(targetTabAfterUnlock);
+        setTargetTabAfterUnlock(null);
+      } else {
+        setActiveTab('vuln-report');
+      }
+    } else {
+      setAdminPinError('PIN atau Password Admin salah. Silakan coba lagi.');
+    }
+  };
+
+  const handleLockAdminMode = () => {
+    setIsAdminUnlocked(false);
+    localStorage.setItem('vuln_admin_unlocked', 'false');
+    localStorage.setItem('repo_admin_unlocked', 'false');
+    window.dispatchEvent(new Event('admin_mode_changed'));
+  };
+
   // Fetch templates list
   const fetchTemplates = async () => {
     setLoadingTemplates(true);
@@ -198,28 +255,89 @@ export default function App() {
           </div>
         </div>
 
-        {/* Tab Buttons */}
-        <nav className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 self-start sm:self-center overflow-x-auto max-w-full">
-          {(['processor', 'manual', 'templates', 'repository', 'vuln-report', 'docs'] as const).map((tab) => (
+        {/* Tab Buttons & Admin Status */}
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+          <nav className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 overflow-x-auto max-w-full">
+            {(['processor', 'manual', 'templates', 'repository', 'vuln-report', 'docs'] as const).map((tab) => {
+              const isVuln = tab === 'vuln-report';
+              const isLockedVuln = isVuln && !isAdminUnlocked;
+              return (
+                <button
+                  key={tab}
+                  onClick={() => {
+                    if (isLockedVuln) {
+                      setAdminModalTitle('Menu Notifikasi Kerentanan Terkunci');
+                      setAdminModalSubtitle('Penyusunan dokumen resmi Notifikasi Kerentanan CSIRT berstatus sensitif. Masukkan PIN Admin untuk mengakses menu ini.');
+                      setTargetTabAfterUnlock('vuln-report');
+                      setShowAdminPinModal(true);
+                      setActiveTab('vuln-report');
+                      return;
+                    }
+                    setActiveTab(tab);
+                  }}
+                  className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition-all duration-200 capitalize flex items-center gap-2 shrink-0 ${
+                    activeTab === tab
+                      ? 'bg-indigo-600 text-white shadow'
+                      : isLockedVuln
+                      ? 'text-amber-400 hover:text-amber-300 hover:bg-amber-950/20 border border-amber-500/20'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                  }`}
+                  title={isLockedVuln ? 'Terkunci - Memerlukan Akses Mode Admin' : undefined}
+                >
+                  {tab === 'processor' && <Upload className="h-3.5 w-3.5" />}
+                  {tab === 'manual' && <Edit3 className="h-3.5 w-3.5" />}
+                  {tab === 'templates' && <FileText className="h-3.5 w-3.5" />}
+                  {tab === 'repository' && <Database className="h-3.5 w-3.5" />}
+                  {tab === 'vuln-report' && (
+                    isLockedVuln ? (
+                      <Lock className="h-3.5 w-3.5 text-amber-400" />
+                    ) : (
+                      <ShieldAlert className="h-3.5 w-3.5 text-rose-400" />
+                    )
+                  )}
+                  {tab === 'docs' && <HelpCircle className="h-3.5 w-3.5" />}
+                  <span>{tab === 'vuln-report' ? 'Notifikasi Kerentanan (Word)' : tab}</span>
+                  {isLockedVuln && (
+                    <span className="text-[9px] uppercase tracking-wider font-bold bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30">
+                      Locked
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Quick Admin Mode Toggle */}
+          {isAdminUnlocked ? (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition-all duration-200 capitalize flex items-center gap-2 shrink-0 ${
-                activeTab === tab
-                  ? 'bg-indigo-600 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-              }`}
+              id="btn-global-admin-unlocked"
+              onClick={handleLockAdminMode}
+              type="button"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-950/70 text-emerald-300 border border-emerald-500/30 hover:bg-rose-950/50 hover:text-rose-300 hover:border-rose-500/40 transition shadow-sm shrink-0"
+              title="Mode Admin Aktif. Klik untuk Mengunci Kembali."
             >
-              {tab === 'processor' && <Upload className="h-3.5 w-3.5" />}
-              {tab === 'manual' && <Edit3 className="h-3.5 w-3.5" />}
-              {tab === 'templates' && <FileText className="h-3.5 w-3.5" />}
-              {tab === 'repository' && <Database className="h-3.5 w-3.5" />}
-              {tab === 'vuln-report' && <ShieldAlert className="h-3.5 w-3.5 text-rose-400" />}
-              {tab === 'docs' && <HelpCircle className="h-3.5 w-3.5" />}
-              {tab === 'vuln-report' ? 'Notifikasi Kerentanan (Word)' : tab}
+              <Unlock className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Admin Unlocked</span>
+              <span className="text-[10px] text-emerald-400/80 underline decoration-dotted ml-0.5">(Kunci)</span>
             </button>
-          ))}
-        </nav>
+          ) : (
+            <button
+              id="btn-global-admin-locked"
+              onClick={() => {
+                setAdminModalTitle('Buka Kunci Mode Admin');
+                setAdminModalSubtitle('Masukkan PIN / Password Admin untuk membuka akses ke fitur terproteksi (Notifikasi Kerentanan & Repositori).');
+                setTargetTabAfterUnlock(null);
+                setShowAdminPinModal(true);
+              }}
+              type="button"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-950 text-slate-400 border border-slate-800 hover:text-amber-300 hover:border-amber-500/30 hover:bg-amber-950/20 transition shadow-sm shrink-0"
+              title="Klik untuk membuka Akses Admin dengan PIN"
+            >
+              <Lock className="w-3.5 h-3.5 text-amber-400" />
+              <span>Mode Admin</span>
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Main Content Viewport */}
@@ -257,12 +375,137 @@ export default function App() {
           )}
 
           {activeTab === 'vuln-report' && (
-            <VulnReportTab />
+            isAdminUnlocked ? (
+              <VulnReportTab
+                isAdminUnlocked={isAdminUnlocked}
+                onLockAdmin={handleLockAdminMode}
+              />
+            ) : (
+              <VulnLockedView
+                onUnlockSuccess={() => {
+                  setIsAdminUnlocked(true);
+                  localStorage.setItem('vuln_admin_unlocked', 'true');
+                  localStorage.setItem('repo_admin_unlocked', 'true');
+                  window.dispatchEvent(new Event('admin_mode_changed'));
+                }}
+                onBackToProcessor={() => setActiveTab('processor')}
+                onVerifyPin={(pin) => {
+                  const rawPin = localStorage.getItem('repo_admin_pin');
+                  const storedPin = rawPin && rawPin !== 'admin' ? rawPin : 'wisnuganteng';
+                  return pin === storedPin || pin === 'wisnuganteng';
+                }}
+              />
+            )
           )}
 
           {activeTab === 'docs' && <DocsTab />}
         </AnimatePresence>
       </main>
+
+      {/* Top-Level Admin PIN Modal */}
+      <AnimatePresence>
+        {showAdminPinModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+            >
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/80 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-400">
+                    <ShieldCheck className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                      {adminModalTitle}
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Otorisasi Administrator Keamanan
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowAdminPinModal(false);
+                    setAdminPinError('');
+                    setAdminPinInput('');
+                    setTargetTabAfterUnlock(null);
+                  }}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Form Body */}
+              <form onSubmit={handleVerifyAdminPin} className="p-6 space-y-4">
+                <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl text-xs text-slate-300 leading-relaxed space-y-1">
+                  <p className="font-semibold text-amber-300 flex items-center gap-1.5">
+                    <Lock className="h-3.5 w-3.5 text-amber-400" />
+                    Akses Menu Sensitif Terproteksi
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    {adminModalSubtitle}
+                  </p>
+                </div>
+
+                {adminPinError && (
+                  <div className="p-3 bg-red-950/40 border border-red-500/40 rounded-xl text-xs text-red-300 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+                    <span>{adminPinError}</span>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Key className="h-3.5 w-3.5 text-indigo-400" />
+                    Masukkan PIN / Password Admin:
+                  </label>
+                  <input
+                    type="password"
+                    autoFocus
+                    value={adminPinInput}
+                    onChange={(e) => {
+                      setAdminPinInput(e.target.value);
+                      setAdminPinError('');
+                    }}
+                    placeholder="Masukkan Password Admin"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm font-mono text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-amber-500 transition-all text-center tracking-widest"
+                  />
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
+                    <span>Akses khusus Administrator CSIRT</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAdminPinModal(false);
+                      setAdminPinError('');
+                      setAdminPinInput('');
+                      setTargetTabAfterUnlock(null);
+                    }}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs rounded-xl transition-colors"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-lg flex items-center gap-2"
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    <span>Unlock Mode Admin</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Footer */}
       <footer className="border-t border-slate-900 bg-slate-950/80 py-6 px-8 text-center text-xs text-slate-500 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2038,16 +2281,36 @@ function TemplatesTab({
   const [showAdminPinModal, setShowAdminPinModal] = useState<boolean>(false);
   const [adminPinInput, setAdminPinInput] = useState<string>('');
   const [adminPinError, setAdminPinError] = useState<string>('');
-  const [storedAdminPin] = useState<string>(() => localStorage.getItem('repo_admin_pin') || 'wisnuganteng');
+  const [storedAdminPin] = useState<string>(() => {
+    const rawPin = localStorage.getItem('repo_admin_pin');
+    return rawPin && rawPin !== 'admin' ? rawPin : 'wisnuganteng';
+  });
   const [pendingAdminAction, setPendingAdminAction] = useState<('github_settings' | 'pull_github' | 'push_github') | null>(null);
+
+  // Sync admin mode from global events
+  useEffect(() => {
+    const handleSync = () => {
+      setIsAdminUnlocked(localStorage.getItem('repo_admin_unlocked') === 'true');
+    };
+    window.addEventListener('admin_mode_changed', handleSync);
+    window.addEventListener('storage', handleSync);
+    return () => {
+      window.removeEventListener('admin_mode_changed', handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
+  }, []);
 
   // Verify PIN to Unlock Admin Mode
   const handleVerifyAdminPin = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const inputClean = adminPinInput.trim();
-    if (inputClean === storedAdminPin || inputClean === 'wisnuganteng' || inputClean === 'admin') {
+    const rawPin = localStorage.getItem('repo_admin_pin');
+    const effectivePin = rawPin && rawPin !== 'admin' ? rawPin : 'wisnuganteng';
+    if (inputClean === effectivePin || inputClean === 'wisnuganteng') {
       setIsAdminUnlocked(true);
       localStorage.setItem('repo_admin_unlocked', 'true');
+      localStorage.setItem('vuln_admin_unlocked', 'true');
+      window.dispatchEvent(new Event('admin_mode_changed'));
       setShowAdminPinModal(false);
       setAdminPinInput('');
       setAdminPinError('');
@@ -2074,6 +2337,8 @@ function TemplatesTab({
   const handleLockAdminMode = () => {
     setIsAdminUnlocked(false);
     localStorage.setItem('repo_admin_unlocked', 'false');
+    localStorage.setItem('vuln_admin_unlocked', 'false');
+    window.dispatchEvent(new Event('admin_mode_changed'));
   };
 
   // Pull / Sync latest templates & database files from GitHub repository to local disk
