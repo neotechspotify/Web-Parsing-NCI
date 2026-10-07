@@ -41,8 +41,10 @@ import {
   ZoomIn,
   Columns,
   Grid,
-  Image as ImageIcon
+  Image as ImageIcon,
+  ShieldAlert
 } from 'lucide-react';
+import VulnReportTab from './components/VulnReportTab';
 import companyLogo from './assets/images/nci_shield_white_bg_1783343904191.jpg'; 
 import { LogEvent, ProcessResult } from './types';
 import AalPivotVisualizer from './components/AalPivotVisualizer';
@@ -129,7 +131,7 @@ export const downloadSingleFile = (fileObj: { name: string; content?: string; ba
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'processor' | 'manual' | 'templates' | 'docs' | 'repository'>('processor');
+  const [activeTab, setActiveTab] = useState<'processor' | 'manual' | 'templates' | 'docs' | 'repository' | 'vuln-report'>('processor');
   const [instansiList, setInstansiList] = useState<string[]>(['kemkes', 'sophos', 'aal', 'medika', 'asei']);
   const [templates, setTemplates] = useState<Record<string, string[]>>({});
   const [loadingTemplates, setLoadingTemplates] = useState(false);
@@ -145,11 +147,22 @@ export default function App() {
       }
       const data = await res.json();
       if (data && typeof data === 'object') {
-        setTemplates(data);
-        const keys = Object.keys(data);
+        // Exclude 'notifikasi_kerentanan' and 'kemtan' so they never appear in general menus
+        const filteredData: Record<string, string[]> = {};
+        for (const [k, v] of Object.entries(data)) {
+          if (k.toLowerCase() !== 'notifikasi_kerentanan' && k.toLowerCase() !== 'kemtan') {
+            filteredData[k] = v as string[];
+          }
+        }
+        setTemplates(filteredData);
+        const keys = Object.keys(filteredData).filter(
+          (k) => k.toLowerCase() !== 'notifikasi_kerentanan' && k.toLowerCase() !== 'kemtan'
+        );
         if (keys.length > 0) {
           // Ensure 'aal' and 'asei' are always included as valid instansi for the processor
-          const combined = Array.from(new Set([...keys, 'aal', 'asei']));
+          const combined = Array.from(new Set([...keys, 'aal', 'asei'])).filter(
+            (k) => k.toLowerCase() !== 'notifikasi_kerentanan' && k.toLowerCase() !== 'kemtan'
+          );
           setInstansiList(combined);
         }
       }
@@ -186,12 +199,12 @@ export default function App() {
         </div>
 
         {/* Tab Buttons */}
-        <nav className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 self-start sm:self-center">
-          {(['processor', 'manual', 'templates', 'repository', 'docs'] as const).map((tab) => (
+        <nav className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 self-start sm:self-center overflow-x-auto max-w-full">
+          {(['processor', 'manual', 'templates', 'repository', 'vuln-report', 'docs'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all duration-200 capitalize flex items-center gap-2 ${
+              className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition-all duration-200 capitalize flex items-center gap-2 shrink-0 ${
                 activeTab === tab
                   ? 'bg-indigo-600 text-white shadow'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
@@ -201,8 +214,9 @@ export default function App() {
               {tab === 'manual' && <Edit3 className="h-3.5 w-3.5" />}
               {tab === 'templates' && <FileText className="h-3.5 w-3.5" />}
               {tab === 'repository' && <Database className="h-3.5 w-3.5" />}
+              {tab === 'vuln-report' && <ShieldAlert className="h-3.5 w-3.5 text-rose-400" />}
               {tab === 'docs' && <HelpCircle className="h-3.5 w-3.5" />}
-              {tab}
+              {tab === 'vuln-report' ? 'Notifikasi Kerentanan (Word)' : tab}
             </button>
           ))}
         </nav>
@@ -240,6 +254,10 @@ export default function App() {
             <RepositoryTab
               instansiList={instansiList}
             />
+          )}
+
+          {activeTab === 'vuln-report' && (
+            <VulnReportTab />
           )}
 
           {activeTab === 'docs' && <DocsTab />}
@@ -2247,22 +2265,84 @@ function TemplatesTab({
 
     setGithubSyncStatus({ loading: true, type: null, message: `Mengirim ${targetPath} ke GitHub...` });
 
-    try {
-      // 1. Get existing file SHA if present
-      let existingSha = '';
-      const getRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${targetBranch}`, {
-        headers: {
-          'Authorization': `Bearer ${pat}`,
-          'Accept': 'application/vnd.github.v3+json'
-        }
-      });
+    // Function to retrieve latest remote SHA with full fallback (contents API + git tree API)
+    const fetchLatestTemplateSha = async (): Promise<string | undefined> => {
+      // 1. Try contents endpoint directly
+      try {
+        const getRes = await fetch(
+          `https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${encodeURIComponent(targetBranch)}`,
+          {
+            cache: 'no-store',
+            headers: {
+              'Authorization': `Bearer ${pat}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache'
+            }
+          }
+        );
 
-      if (getRes.ok) {
-        const getData = await getRes.json();
-        existingSha = getData.sha;
+        if (getRes.status === 401) {
+          throw new Error('Token GitHub (PAT) tidak valid atau sudah kedaluwarsa (Bad credentials). Silakan perbarui Token di menu GitHub Settings.');
+        }
+
+        if (getRes.status === 403) {
+          const errData = await getRes.json().catch(() => ({}));
+          throw new Error(errData.message || 'Akses ditolak (HTTP 403). Pastikan Token memiliki izin Read & Write ke repositori.');
+        }
+
+        if (getRes.status === 404) {
+          // File does not exist yet on this branch -> safe to create as new file
+          return undefined;
+        }
+
+        if (getRes.ok) {
+          const getData = await getRes.json();
+          if (getData && getData.sha) {
+            return getData.sha;
+          }
+        }
+      } catch (err: any) {
+        if (err.message && (err.message.includes('Bad credentials') || err.message.includes('HTTP 403'))) {
+          throw err;
+        }
+        console.warn('[GitHub Template Sync] contents API query failed, trying tree fallback:', err);
       }
 
-      // 2. Encode UTF-8 content to Base64
+      // 2. Fallback: Query Git Tree API for targetBranch to find file blob SHA directly
+      try {
+        const treeRes = await fetch(
+          `https://api.github.com/repos/${cleanRepo}/git/trees/${encodeURIComponent(targetBranch)}?recursive=1`,
+          {
+            cache: 'no-store',
+            headers: {
+              'Authorization': `Bearer ${pat}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'Cache-Control': 'no-cache, no-store, must-revalidate'
+            }
+          }
+        );
+        if (treeRes.ok) {
+          const treeData = await treeRes.json();
+          if (Array.isArray(treeData.tree)) {
+            const normalizedTargetPath = targetPath.replace(/^\/+/, '').toLowerCase();
+            const match = treeData.tree.find((item: any) =>
+              item && item.type === 'blob' && item.path && item.path.toLowerCase() === normalizedTargetPath
+            );
+            if (match && match.sha) {
+              return match.sha;
+            }
+          }
+        }
+      } catch (treeErr) {
+        console.warn('[GitHub Template Sync] tree query failed:', treeErr);
+      }
+
+      return undefined;
+    };
+
+    try {
+      // 1. Encode UTF-8 content to Base64
       const utf8Bytes = new TextEncoder().encode(content);
       let binaryString = '';
       for (let i = 0; i < utf8Bytes.byteLength; i++) {
@@ -2270,42 +2350,77 @@ function TemplatesTab({
       }
       const base64Content = btoa(binaryString);
 
-      // 3. PUT request to commit file
-      const putRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${pat}`,
-          'Accept': 'application/vnd.github.v3+json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+      // 2. PUT request to commit file with auto-retry on SHA conflict
+      let currentSha = await fetchLatestTemplateSha();
+      let lastErrMsg = '';
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const putBody: any = {
           message: customMsg || `feat(template): sync ${targetPath} via Web UI`,
           content: base64Content,
-          branch: targetBranch,
-          ...(existingSha ? { sha: existingSha } : {})
-        })
-      });
+          branch: targetBranch
+        };
+        if (currentSha) {
+          putBody.sha = currentSha;
+        }
 
-      const putData = await putRes.json();
-      if (putRes.ok) {
-        const nowStr = new Date().toLocaleTimeString();
-        setGithubSyncStatus({
-          loading: false,
-          type: 'success',
-          message: `Berhasil sync template ${targetPath} ke GitHub pada ${nowStr}!`
+        const putRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${pat}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(putBody)
         });
-        return true;
-      } else {
-        let errMsg = putData.message || 'Error dari API GitHub';
+
+        const putData = await putRes.json().catch(() => ({}));
+        if (putRes.ok) {
+          const nowStr = new Date().toLocaleTimeString();
+          setGithubSyncStatus({
+            loading: false,
+            type: 'success',
+            message: `Berhasil sync template ${targetPath} ke GitHub pada ${nowStr}!`
+          });
+          return true;
+        }
+
+        let errMsg = putData.message || `HTTP ${putRes.status}`;
+        lastErrMsg = errMsg;
+
+        const isShaConflict =
+          putRes.status === 409 ||
+          putRes.status === 422 ||
+          errMsg.toLowerCase().includes('does not match') ||
+          errMsg.toLowerCase().includes('conflict') ||
+          errMsg.toLowerCase().includes('sha');
+
+        if (isShaConflict && attempt < 3) {
+          console.warn(`[GitHub Template Sync] SHA conflict on attempt ${attempt} for ${targetPath}. Refetching fresh SHA and retrying...`);
+          await new Promise(r => setTimeout(r, 500 * attempt));
+          currentSha = await fetchLatestTemplateSha();
+          continue;
+        }
+
         if (errMsg.includes('Bad credentials')) {
           errMsg = 'Token GitHub (PAT) tidak valid atau sudah kedaluwarsa. Silakan perbarui Token di menu GitHub Settings.';
+        } else if (errMsg.includes('Resource not accessible by personal access token')) {
+          errMsg = 'Resource not accessible by personal access token. Token Anda tidak memiliki izin Write/Repo ke repository ini. Gunakan Personal Access Token Classic dengan centang "repo", atau jika Fine-grained token set Repository permissions -> Contents menjadi "Read and write".';
+        } else if (errMsg.includes('"sha" wasn\'t supplied')) {
+          errMsg = 'File sudah ada di repositori GitHub namun SHA file tidak dapat diverifikasi. Silakan periksa izin Token.';
         }
         throw new Error(errMsg);
       }
+
+      throw new Error(lastErrMsg || 'Gagal sync ke GitHub setelah 3 kali percobaan');
     } catch (err: any) {
       let errMsg = err.message || 'Error';
       if (errMsg.includes('Bad credentials')) {
         errMsg = 'Token GitHub (PAT) tidak valid atau sudah kedaluwarsa. Silakan perbarui Token di menu GitHub Settings.';
+      } else if (errMsg.includes('Resource not accessible by personal access token')) {
+        errMsg = 'Resource not accessible by personal access token. Token Anda tidak memiliki izin Write/Repo.';
+      } else if (errMsg.includes('"sha" wasn\'t supplied')) {
+        errMsg = 'File sudah ada di repositori GitHub namun SHA file tidak dapat diverifikasi.';
       }
       setGithubSyncStatus({
         loading: false,
@@ -2328,12 +2443,18 @@ function TemplatesTab({
     const targetPath = `templates/${instansi.toLowerCase()}/${cleanName}`;
 
     try {
-      const getRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${targetBranch}`, {
-        headers: {
-          'Authorization': `Bearer ${pat}`,
-          'Accept': 'application/vnd.github.v3+json'
+      const getRes = await fetch(
+        `https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${encodeURIComponent(targetBranch)}&_nocache=${Date.now()}`,
+        {
+          cache: 'no-store',
+          headers: {
+            'Authorization': `Bearer ${pat}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          }
         }
-      });
+      );
 
       if (getRes.ok) {
         const getData = await getRes.json();

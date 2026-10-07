@@ -354,7 +354,7 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
     }
   };
 
-  // Commit & Push File directly to GitHub REST API
+  // Commit & Push File directly to GitHub REST API with auto-retry on SHA conflict
   const commitToGitHub = async (customContent?: string, customMsg?: string) => {
     const pat = githubToken.trim();
     const repoRaw = githubRepo.trim();
@@ -371,22 +371,84 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
 
     setGithubSyncStatus({ loading: true, type: null, message: `Committing ${targetPath} to GitHub...` });
 
-    try {
-      // 1. Get existing file SHA if present on branch
-      let existingSha = '';
-      const getRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${targetBranch}`, {
-        headers: {
-          'Authorization': `Bearer ${pat}`,
-          'Accept': 'application/vnd.github.v3+json'
-        }
-      });
+    // Function to retrieve latest remote SHA with full fallback (contents API + git tree API)
+    const fetchLatestSha = async (): Promise<string | undefined> => {
+      // 1. Try contents endpoint directly
+      try {
+        const getRes = await fetch(
+          `https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${encodeURIComponent(targetBranch)}`,
+          {
+            cache: 'no-store',
+            headers: {
+              'Authorization': `Bearer ${pat}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache'
+            }
+          }
+        );
 
-      if (getRes.ok) {
-        const getData = await getRes.json();
-        existingSha = getData.sha;
+        if (getRes.status === 401) {
+          throw new Error('Token GitHub (PAT) tidak valid atau sudah kedaluwarsa (Bad credentials). Silakan perbarui Token di menu GitHub Settings.');
+        }
+
+        if (getRes.status === 403) {
+          const errData = await getRes.json().catch(() => ({}));
+          throw new Error(errData.message || 'Akses ditolak (HTTP 403). Pastikan Token memiliki izin Read & Write ke repositori.');
+        }
+
+        if (getRes.status === 404) {
+          // File does not exist yet on this branch -> safe to create as new file
+          return undefined;
+        }
+
+        if (getRes.ok) {
+          const getData = await getRes.json();
+          if (getData && getData.sha) {
+            return getData.sha;
+          }
+        }
+      } catch (err: any) {
+        if (err.message && (err.message.includes('Bad credentials') || err.message.includes('HTTP 403'))) {
+          throw err;
+        }
+        console.warn('[GitHub Sync] contents API query failed, trying tree fallback:', err);
       }
 
-      // 2. Base64 encode content (UTF-8 safe)
+      // 2. Fallback: Query Git Tree API for targetBranch to find file blob SHA directly
+      try {
+        const treeRes = await fetch(
+          `https://api.github.com/repos/${cleanRepo}/git/trees/${encodeURIComponent(targetBranch)}?recursive=1`,
+          {
+            cache: 'no-store',
+            headers: {
+              'Authorization': `Bearer ${pat}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'Cache-Control': 'no-cache, no-store, must-revalidate'
+            }
+          }
+        );
+        if (treeRes.ok) {
+          const treeData = await treeRes.json();
+          if (Array.isArray(treeData.tree)) {
+            const normalizedTargetPath = targetPath.replace(/^\/+/, '').toLowerCase();
+            const match = treeData.tree.find((item: any) =>
+              item && item.type === 'blob' && item.path && item.path.toLowerCase() === normalizedTargetPath
+            );
+            if (match && match.sha) {
+              return match.sha;
+            }
+          }
+        }
+      } catch (treeErr) {
+        console.warn('[GitHub Sync] tree query failed:', treeErr);
+      }
+
+      return undefined;
+    };
+
+    try {
+      // 1. Base64 encode content (UTF-8 safe)
       const utf8Bytes = new TextEncoder().encode(contentToPush);
       let binaryString = '';
       for (let i = 0; i < utf8Bytes.byteLength; i++) {
@@ -394,48 +456,85 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
       }
       const base64Content = btoa(binaryString);
 
-      // 3. Commit/Push file via PUT request
+      // 2. Commit/Push file via PUT request with automatic SHA conflict retry (up to 3 attempts)
       const activeCount = contentToPush.split('\n').filter(l => l.trim() && !l.startsWith('#')).length;
       const commitMsg = customMsg || `feat(repo): update ${targetPath} via Web UI [${activeCount} active entries]`;
 
-      const putRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${pat}`,
-          'Accept': 'application/vnd.github.v3+json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+      let currentSha = await fetchLatestSha();
+      let lastErrMsg = '';
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const putBody: any = {
           message: commitMsg,
           content: base64Content,
-          branch: targetBranch,
-          ...(existingSha ? { sha: existingSha } : {})
-        })
-      });
-
-      const putData = await putRes.json();
-
-      if (putRes.ok) {
-        const nowStr = new Date().toLocaleTimeString();
-        setGithubSyncStatus({
-          loading: false,
-          type: 'success',
-          message: `Successfully pushed ${targetPath} to GitHub at ${nowStr}!`,
-          lastSyncTime: nowStr
-        });
-        return true;
-      } else {
-        let errMsg = putData.message || 'GitHub API error';
-        if (errMsg.includes('Resource not accessible by personal access token')) {
-          errMsg = 'Resource not accessible by personal access token. Token Anda tidak memiliki izin Write/Repo ke repository ini. Gunakan Personal Access Token Classic dengan centang centang "repo", atau jika Fine-grained token set Repository permissions -> Contents menjadi "Read and write".';
+          branch: targetBranch
+        };
+        if (currentSha) {
+          putBody.sha = currentSha;
         }
+
+        const putRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${pat}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(putBody)
+        });
+
+        const putData = await putRes.json().catch(() => ({}));
+
+        if (putRes.ok) {
+          const nowStr = new Date().toLocaleTimeString();
+          setGithubSyncStatus({
+            loading: false,
+            type: 'success',
+            message: `Successfully pushed ${targetPath} to GitHub at ${nowStr}!`,
+            lastSyncTime: nowStr
+          });
+          return true;
+        }
+
+        let errMsg = putData.message || `HTTP ${putRes.status}`;
+        lastErrMsg = errMsg;
+
+        // Check if error is due to SHA mismatch / 409 conflict OR missing SHA (422 '"sha" wasn\'t supplied')
+        const isShaConflict =
+          putRes.status === 409 ||
+          putRes.status === 422 ||
+          errMsg.toLowerCase().includes('does not match') ||
+          errMsg.toLowerCase().includes('conflict') ||
+          errMsg.toLowerCase().includes('sha');
+
+        if (isShaConflict && attempt < 3) {
+          console.warn(`[GitHub Sync] SHA issue on attempt ${attempt} for ${targetPath}: ${errMsg}. Refetching fresh remote SHA and retrying...`);
+          await new Promise(r => setTimeout(r, 500 * attempt));
+          currentSha = await fetchLatestSha();
+          continue;
+        }
+
+        if (errMsg.includes('Bad credentials')) {
+          errMsg = 'Token GitHub (PAT) tidak valid atau sudah kedaluwarsa (Bad credentials). Silakan perbarui Token di menu GitHub Settings.';
+        } else if (errMsg.includes('Resource not accessible by personal access token')) {
+          errMsg = 'Resource not accessible by personal access token. Token Anda tidak memiliki izin Write/Repo ke repository ini. Gunakan Personal Access Token Classic dengan centang "repo", atau jika Fine-grained token set Repository permissions -> Contents menjadi "Read and write".';
+        } else if (errMsg.includes('"sha" wasn\'t supplied')) {
+          errMsg = 'File sudah ada di repositori GitHub namun SHA file tidak dapat diverifikasi. Silakan klik "Pull Latest from GitHub" terlebih dahulu atau periksa izin Token.';
+        }
+
         throw new Error(errMsg);
       }
+
+      throw new Error(lastErrMsg || 'Gagal push ke GitHub setelah 3 kali percobaan.');
     } catch (err: any) {
       console.error('GitHub Sync Error:', err);
       let msg = err.message || 'Unknown error';
-      if (msg.includes('Resource not accessible by personal access token')) {
+      if (msg.includes('Bad credentials')) {
+        msg = 'Token GitHub (PAT) tidak valid atau sudah kedaluwarsa. Silakan periksa atau perbarui token di menu GitHub Settings.';
+      } else if (msg.includes('Resource not accessible by personal access token')) {
         msg = 'Resource not accessible by personal access token. Token Anda tidak memiliki izin Write/Repo. Solusi: Gunakan Personal Access Token (Classic) & centang checkbox "repo".';
+      } else if (msg.includes('"sha" wasn\'t supplied')) {
+        msg = 'File sudah ada di repositori GitHub namun SHA file tidak dapat diverifikasi. Silakan klik "Pull Latest from GitHub" terlebih dahulu atau periksa izin Token.';
       }
       setGithubSyncStatus({
         loading: false,
@@ -462,12 +561,18 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
     setGithubSyncStatus({ loading: true, type: null, message: `Pulling ${targetPath} from GitHub...` });
 
     try {
-      const getRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${targetBranch}`, {
-        headers: {
-          'Authorization': `Bearer ${pat}`,
-          'Accept': 'application/vnd.github.v3+json'
+      const getRes = await fetch(
+        `https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${encodeURIComponent(targetBranch)}&_nocache=${Date.now()}`,
+        {
+          cache: 'no-store',
+          headers: {
+            'Authorization': `Bearer ${pat}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          }
         }
-      });
+      );
 
       if (getRes.ok) {
         const getData = await getRes.json();
@@ -994,7 +1099,9 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
               }}
               className="bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 pr-8 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-bold uppercase cursor-pointer"
             >
-              {instansiList.map((ins) => {
+              {instansiList
+                .filter((ins) => ins.toLowerCase() !== 'notifikasi_kerentanan' && ins.toLowerCase() !== 'kemtan')
+                .map((ins) => {
                 const isLocked = LOCKED_INSTANSI_LIST.includes(ins.toLowerCase());
                 return (
                   <option key={ins} value={ins}>
