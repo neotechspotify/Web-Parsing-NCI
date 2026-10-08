@@ -1962,12 +1962,43 @@ function getTemplateFilePath(instansi: string, name: string): string {
   return pathWithExt;
 }
 
+// Helper to read and write token securely without exposing secrets to git
+function getStoredGitHubToken(): string {
+  const secretTokenPath = path.join(getDatabaseDir(), '.github.token');
+  if (fs.existsSync(secretTokenPath)) {
+    try {
+      const tok = fs.readFileSync(secretTokenPath, 'utf-8').trim();
+      if (tok) return tok;
+    } catch (e) {}
+  }
+  if (process.env.GITHUB_PAT || process.env.GITHUB_TOKEN) {
+    return (process.env.GITHUB_PAT || process.env.GITHUB_TOKEN || '').trim();
+  }
+  const configPath = path.join(getDatabaseDir(), 'github.config.json');
+  if (fs.existsSync(configPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      if (parsed.githubToken) return parsed.githubToken.trim();
+    } catch (e) {}
+  }
+  return '';
+}
+
+function saveStoredGitHubToken(token: string) {
+  if (!token) return;
+  const secretTokenPath = path.join(getDatabaseDir(), '.github.token');
+  try {
+    fs.mkdirSync(getDatabaseDir(), { recursive: true });
+    fs.writeFileSync(secretTokenPath, token.trim(), 'utf-8');
+  } catch (e) {}
+}
+
 // API Routes
 app.get('/api/github-config', (req, res) => {
   try {
     const configPath = path.join(getDatabaseDir(), 'github.config.json');
     let config = {
-      githubToken: process.env.GITHUB_PAT || process.env.GITHUB_TOKEN || '',
+      githubToken: getStoredGitHubToken(),
       githubRepo: 'neotechspotify/Web-Parsing-NCI',
       githubBranch: 'main',
       githubFilePath: 'database/medika/blacklists/List-IP-Blacklist.txt',
@@ -1980,15 +2011,13 @@ app.get('/api/github-config', (req, res) => {
       try {
         const parsed = JSON.parse(fileData);
         config = { ...config, ...parsed };
-        if (!config.githubToken) {
-          config.githubToken = process.env.GITHUB_PAT || process.env.GITHUB_TOKEN || '';
-        }
+        config.githubToken = getStoredGitHubToken();
       } catch (parseErr) {
         console.error('Error parsing github.config.json:', parseErr);
       }
     } else {
       fs.mkdirSync(getDatabaseDir(), { recursive: true });
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+      fs.writeFileSync(configPath, JSON.stringify({ ...config, githubToken: '' }, null, 2), 'utf-8');
     }
 
     res.json({ success: true, config });
@@ -2001,7 +2030,7 @@ app.post('/api/github-config', (req, res) => {
   try {
     const configPath = path.join(getDatabaseDir(), 'github.config.json');
     let existingConfig = {
-      githubToken: '',
+      githubToken: getStoredGitHubToken(),
       githubRepo: 'neotechspotify/Web-Parsing-NCI',
       githubBranch: 'main',
       githubFilePath: 'database/medika/blacklists/List-IP-Blacklist.txt',
@@ -2013,6 +2042,7 @@ app.post('/api/github-config', (req, res) => {
       try {
         const fileData = fs.readFileSync(configPath, 'utf-8');
         existingConfig = { ...existingConfig, ...JSON.parse(fileData) };
+        existingConfig.githubToken = getStoredGitHubToken();
       } catch (e) {}
     }
 
@@ -2023,8 +2053,12 @@ app.post('/api/github-config', (req, res) => {
     const rawBranch = githubBranch !== undefined ? String(githubBranch) : (branch !== undefined ? String(branch) : existingConfig.githubBranch);
     const rawPath = githubFilePath !== undefined ? String(githubFilePath) : (filepath !== undefined ? String(filepath) : existingConfig.githubFilePath);
 
+    if (rawToken && rawToken.trim()) {
+      saveStoredGitHubToken(rawToken.trim());
+    }
+
     const newConfig = {
-      githubToken: rawToken.trim(),
+      githubToken: '', // Keep clean in git tracking to prevent secrets exposure
       githubRepo: rawRepo.trim() || 'neotechspotify/Web-Parsing-NCI',
       githubBranch: rawBranch.trim() || 'main',
       githubFilePath: rawPath.trim() || 'database/medika/blacklists/List-IP-Blacklist.txt',
@@ -2038,7 +2072,7 @@ app.post('/api/github-config', (req, res) => {
     res.json({
       success: true,
       message: 'Konfigurasi GitHub terpusat berhasil diperbarui di server!',
-      config: newConfig
+      config: { ...newConfig, githubToken: getStoredGitHubToken() }
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
