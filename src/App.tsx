@@ -25,6 +25,7 @@ import {
   HelpCircle,
   Database,
   Eye,
+  EyeOff,
   Github,
   GitBranch,
   CloudUpload,
@@ -2203,11 +2204,38 @@ function TemplatesTab({
   const [tempRepo, setTempRepo] = useState(githubRepo);
   const [tempBranch, setTempBranch] = useState(githubBranch);
   const [tempAutoSync, setTempAutoSync] = useState(githubAutoSync);
+  const [showPat, setShowPat] = useState<boolean>(false);
   const [testGithubStatus, setTestGithubStatus] = useState<{
     loading: boolean;
     type: 'success' | 'error' | null;
     message: string;
   } | null>(null);
+
+  // Cross-component sync for GitHub config
+  useEffect(() => {
+    const handleGlobalConfigChange = (e: any) => {
+      if (e.detail) {
+        if (e.detail.token !== undefined) {
+          setGithubToken(e.detail.token);
+          setTempPat(e.detail.token);
+        }
+        if (e.detail.repo !== undefined) {
+          setGithubRepo(e.detail.repo);
+          setTempRepo(e.detail.repo);
+        }
+        if (e.detail.branch !== undefined) {
+          setGithubBranch(e.detail.branch);
+          setTempBranch(e.detail.branch);
+        }
+        if (e.detail.autoSync !== undefined) {
+          setGithubAutoSync(e.detail.autoSync);
+          setTempAutoSync(e.detail.autoSync);
+        }
+      }
+    };
+    window.addEventListener('github_config_changed', handleGlobalConfigChange);
+    return () => window.removeEventListener('github_config_changed', handleGlobalConfigChange);
+  }, []);
 
   // Test PAT token against GitHub API directly
   const testGithubConnection = async () => {
@@ -2224,7 +2252,26 @@ function TemplatesTab({
     setTestGithubStatus({ loading: true, type: null, message: 'Menguji token ke GitHub API...' });
 
     try {
-      // 1. Verify User Authentication
+      // 1. Try server verification first
+      const verifyRes = await fetch('/api/github-verify-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ githubToken: pat, githubRepo: repoRaw })
+      });
+
+      if (verifyRes.ok) {
+        const verifyData = await verifyRes.json();
+        if (verifyData.success) {
+          setTestGithubStatus({
+            loading: false,
+            type: 'success',
+            message: `Koneksi Sukses! Terotentikasi sebagai @${verifyData.username}.${verifyData.canPush ? ' Izin Write aktif.' : ''}`
+          });
+          return;
+        }
+      }
+
+      // 2. Client fallback
       const userRes = await fetch('https://api.github.com/user', {
         headers: {
           'Authorization': `Bearer ${pat}`,
@@ -2242,7 +2289,7 @@ function TemplatesTab({
       const userData = await userRes.json();
       const username = userData.login || 'User';
 
-      // 2. Verify Repository Access (if repo is set)
+      // 3. Verify Repository Access (if repo is set)
       if (repoRaw) {
         const cleanRepo = repoRaw.replace('https://github.com/', '').replace('.git', '').trim();
         const repoRes = await fetch(`https://api.github.com/repos/${cleanRepo}`, {
@@ -2470,25 +2517,33 @@ function TemplatesTab({
 
   const saveGithubSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    setGithubToken(tempPat);
-    setGithubRepo(tempRepo);
-    setGithubBranch(tempBranch);
+    const cleanPat = tempPat.trim();
+    const cleanRepo = (tempRepo || 'neotechspotify/Web-Parsing-NCI').trim();
+    const cleanBranch = (tempBranch || 'main').trim();
+
+    setGithubToken(cleanPat);
+    setGithubRepo(cleanRepo);
+    setGithubBranch(cleanBranch);
     setGithubAutoSync(tempAutoSync);
 
-    localStorage.setItem('github_pat', tempPat);
-    localStorage.setItem('github_repo', tempRepo);
-    localStorage.setItem('github_branch', tempBranch);
+    localStorage.setItem('github_pat', cleanPat);
+    localStorage.setItem('github_repo', cleanRepo);
+    localStorage.setItem('github_branch', cleanBranch);
     localStorage.setItem('github_autosync', tempAutoSync ? 'true' : 'false');
     setShowGithubModal(false);
+
+    window.dispatchEvent(new CustomEvent('github_config_changed', {
+      detail: { token: cleanPat, repo: cleanRepo, branch: cleanBranch, autoSync: tempAutoSync }
+    }));
 
     try {
       await fetch('/api/github-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          githubToken: tempPat,
-          githubRepo: tempRepo,
-          githubBranch: tempBranch,
+          githubToken: cleanPat,
+          githubRepo: cleanRepo,
+          githubBranch: cleanBranch,
           githubAutoSync: tempAutoSync
         })
       });
@@ -3392,16 +3447,29 @@ function TemplatesTab({
                     Generate PAT Classic <ExternalLink className="h-3 w-3" />
                   </a>
                 </div>
-                <input
-                  type="password"
-                  value={tempPat}
-                  onChange={(e) => {
-                    setTempPat(e.target.value);
-                    setTestGithubStatus(null);
-                  }}
-                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx atau github_pat_..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
+                <div className="relative">
+                  <input
+                    type={showPat ? 'text' : 'password'}
+                    value={tempPat}
+                    onChange={(e) => {
+                      setTempPat(e.target.value);
+                      setTestGithubStatus(null);
+                    }}
+                    onBlur={() => {
+                      if (tempPat) setTempPat(tempPat.trim());
+                    }}
+                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx atau github_pat_..."
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-3 pr-10 py-2 text-slate-200 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPat(!showPat)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 p-1 rounded transition-colors"
+                    title={showPat ? 'Sembunyikan Token' : 'Lihat Token'}
+                  >
+                    {showPat ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
                 <div className="mt-1.5 p-2 bg-slate-950/80 border border-slate-800/80 rounded text-[10px] text-slate-400 space-y-1">
                   <p className="font-semibold text-slate-300">💡 Tips Menghindari Token Kedaluwarsa/Invalid:</p>
                   <ul className="list-disc list-inside space-y-0.5">
