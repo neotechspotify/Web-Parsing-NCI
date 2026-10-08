@@ -527,7 +527,7 @@ async function generateAalExcelWithExcelJS(
 }
 
 export const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -2018,12 +2018,17 @@ app.post('/api/github-config', (req, res) => {
 
     const { githubToken, pat, githubRepo, repo, githubBranch, branch, githubFilePath, filepath, githubAutoSync, autoSync } = req.body;
 
+    const rawToken = githubToken !== undefined ? String(githubToken) : (pat !== undefined ? String(pat) : existingConfig.githubToken);
+    const rawRepo = githubRepo !== undefined ? String(githubRepo) : (repo !== undefined ? String(repo) : existingConfig.githubRepo);
+    const rawBranch = githubBranch !== undefined ? String(githubBranch) : (branch !== undefined ? String(branch) : existingConfig.githubBranch);
+    const rawPath = githubFilePath !== undefined ? String(githubFilePath) : (filepath !== undefined ? String(filepath) : existingConfig.githubFilePath);
+
     const newConfig = {
-      githubToken: githubToken !== undefined ? githubToken : (pat !== undefined ? pat : existingConfig.githubToken),
-      githubRepo: githubRepo !== undefined ? githubRepo : (repo !== undefined ? repo : existingConfig.githubRepo),
-      githubBranch: githubBranch !== undefined ? githubBranch : (branch !== undefined ? branch : existingConfig.githubBranch),
-      githubFilePath: githubFilePath !== undefined ? githubFilePath : (filepath !== undefined ? filepath : existingConfig.githubFilePath),
-      githubAutoSync: githubAutoSync !== undefined ? githubAutoSync : (autoSync !== undefined ? autoSync : existingConfig.githubAutoSync),
+      githubToken: rawToken.trim(),
+      githubRepo: rawRepo.trim() || 'neotechspotify/Web-Parsing-NCI',
+      githubBranch: rawBranch.trim() || 'main',
+      githubFilePath: rawPath.trim() || 'database/medika/blacklists/List-IP-Blacklist.txt',
+      githubAutoSync: githubAutoSync !== undefined ? Boolean(githubAutoSync) : (autoSync !== undefined ? Boolean(autoSync) : existingConfig.githubAutoSync),
       updatedAt: new Date().toISOString()
     };
 
@@ -2037,6 +2042,259 @@ app.post('/api/github-config', (req, res) => {
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Verify GitHub PAT and repository access
+app.post('/api/github-verify-token', async (req, res) => {
+  try {
+    const configPath = path.join(getDatabaseDir(), 'github.config.json');
+    let savedToken = '';
+    let savedRepo = 'neotechspotify/Web-Parsing-NCI';
+    if (fs.existsSync(configPath)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        savedToken = parsed.githubToken || '';
+        savedRepo = parsed.githubRepo || savedRepo;
+      } catch (e) {}
+    }
+
+    const token = (req.body?.githubToken || req.body?.pat || savedToken || '').toString().trim();
+    const repoRaw = (req.body?.githubRepo || req.body?.repo || savedRepo || '').toString().trim();
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Personal Access Token (PAT) kosong. Silakan masukkan token terlebih dahulu.'
+      });
+    }
+
+    // 1. Verify user
+    const userRes = await fetch('https://api.github.com/user', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Web-Parsing-NCI'
+      }
+    });
+
+    if (!userRes.ok) {
+      if (userRes.status === 401) {
+        return res.status(401).json({
+          success: false,
+          status: 401,
+          message: '401 Bad credentials: Token tidak valid atau sudah kedaluwarsa di GitHub. Pastikan token disalin lengkap tanpa spasi.'
+        });
+      }
+      return res.status(userRes.status).json({
+        success: false,
+        status: userRes.status,
+        message: `GitHub API error (${userRes.status}): ${userRes.statusText}`
+      });
+    }
+
+    const userData: any = await userRes.json();
+    const username = userData.login || 'User';
+
+    // 2. Verify repo access if repo is provided
+    let repoDetails: any = null;
+    let canPush = false;
+    if (repoRaw) {
+      const cleanRepo = repoRaw.replace('https://github.com/', '').replace('.git', '').trim();
+      const repoRes = await fetch(`https://api.github.com/repos/${cleanRepo}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'Web-Parsing-NCI'
+        }
+      });
+
+      if (!repoRes.ok) {
+        if (repoRes.status === 404) {
+          return res.status(404).json({
+            success: false,
+            username,
+            status: 404,
+            message: `Token valid untuk @${username}, namun repositori "${cleanRepo}" tidak ditemukan atau tidak dapat diakses.`
+          });
+        }
+        if (repoRes.status === 403) {
+          return res.status(403).json({
+            success: false,
+            username,
+            status: 403,
+            message: `Token valid untuk @${username}, tetapi tidak memiliki izin akses (403 Forbidden) ke repositori "${cleanRepo}". Pastikan scope "repo" atau permissions Contents Read & Write aktif.`
+          });
+        }
+      } else {
+        repoDetails = await repoRes.json();
+        canPush = repoDetails.permissions ? Boolean(repoDetails.permissions.push) : true;
+      }
+    }
+
+    return res.json({
+      success: true,
+      username,
+      name: userData.name || username,
+      avatarUrl: userData.avatar_url,
+      canPush,
+      message: `Koneksi Berhasil! Terotentikasi sebagai @${username}.${canPush ? ' Izin Write/Push aktif.' : ''}`
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: `Gagal verifikasi token: ${error.message}` });
+  }
+});
+
+// Server-side Push / Commit endpoint for maximum reliability (no CORS / client SHA issues)
+app.post('/api/github-sync-push', async (req, res) => {
+  try {
+    const configPath = path.join(getDatabaseDir(), 'github.config.json');
+    let savedToken = '';
+    let savedRepo = 'neotechspotify/Web-Parsing-NCI';
+    let savedBranch = 'main';
+
+    if (fs.existsSync(configPath)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        savedToken = parsed.githubToken || '';
+        savedRepo = parsed.githubRepo || savedRepo;
+        savedBranch = parsed.githubBranch || savedBranch;
+      } catch (e) {}
+    }
+
+    const token = (req.body?.githubToken || req.body?.pat || savedToken || '').toString().trim();
+    const repoRaw = (req.body?.githubRepo || req.body?.repo || savedRepo || '').toString().trim();
+    const branch = (req.body?.githubBranch || req.body?.branch || savedBranch || 'main').toString().trim();
+    const targetPathRaw = (req.body?.targetPath || req.body?.path || '').toString().trim();
+    const content = req.body?.content !== undefined ? String(req.body.content) : '';
+    const message = req.body?.message || `feat(repo): update ${targetPathRaw} via Web UI`;
+
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'GitHub PAT belum diisi atau disimpan di server.' });
+    }
+    if (!repoRaw || !targetPathRaw) {
+      return res.status(400).json({ success: false, message: 'Repo dan target path wajib diisi.' });
+    }
+
+    const cleanRepo = repoRaw.replace('https://github.com/', '').replace('.git', '').trim();
+    const targetPath = targetPathRaw.replace(/^\/+/, '').trim();
+
+    // 1. Fetch remote SHA if file exists
+    let currentSha: string | undefined = undefined;
+    try {
+      const getRes = await fetch(
+        `https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${encodeURIComponent(branch)}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'Web-Parsing-NCI'
+          }
+        }
+      );
+      if (getRes.ok) {
+        const getData: any = await getRes.json();
+        if (getData?.sha) currentSha = getData.sha;
+      } else if (getRes.status === 401) {
+        return res.status(401).json({ success: false, message: 'Token GitHub (PAT) tidak valid atau sudah kedaluwarsa (401 Bad credentials).' });
+      } else if (getRes.status === 403) {
+        return res.status(403).json({ success: false, message: 'Akses ditolak (HTTP 403). Token tidak memiliki izin Write ke repositori ini.' });
+      }
+    } catch (e) {}
+
+    // Fallback tree query if sha not found yet
+    if (!currentSha) {
+      try {
+        const treeRes = await fetch(
+          `https://api.github.com/repos/${cleanRepo}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'Web-Parsing-NCI'
+            }
+          }
+        );
+        if (treeRes.ok) {
+          const treeData: any = await treeRes.json();
+          const match = (treeData.tree || []).find((item: any) =>
+            item && item.type === 'blob' && item.path && item.path.toLowerCase() === targetPath.toLowerCase()
+          );
+          if (match?.sha) currentSha = match.sha;
+        }
+      } catch (e) {}
+    }
+
+    // 2. Base64 encode content
+    const base64Content = Buffer.from(content, 'utf-8').toString('base64');
+
+    // 3. Commit / Push with auto-retry on SHA mismatch
+    let lastError = '';
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const putBody: any = {
+        message,
+        content: base64Content,
+        branch
+      };
+      if (currentSha) {
+        putBody.sha = currentSha;
+      }
+
+      const putRes = await fetch(`https://api.github.com/repos/${cleanRepo}/contents/${targetPath}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'Web-Parsing-NCI'
+        },
+        body: JSON.stringify(putBody)
+      });
+
+      const putData: any = await putRes.json().catch(() => ({}));
+
+      if (putRes.ok) {
+        return res.json({
+          success: true,
+          message: `Berhasil commit & push ${targetPath} ke branch ${branch}!`,
+          sha: putData.content?.sha
+        });
+      }
+
+      lastError = putData.message || `HTTP ${putRes.status}`;
+      if (putRes.status === 401) {
+        return res.status(401).json({ success: false, message: 'Token GitHub (PAT) tidak valid atau kedaluwarsa (Bad credentials).' });
+      }
+      if (putRes.status === 403) {
+        return res.status(403).json({ success: false, message: 'Token tidak memiliki hak akses Write/Repo ke repository ini (HTTP 403).' });
+      }
+
+      // Re-fetch fresh SHA on 409 or 422
+      if ((putRes.status === 409 || putRes.status === 422 || lastError.includes('sha') || lastError.includes('conflict')) && attempt < 3) {
+        await new Promise(r => setTimeout(r, 600 * attempt));
+        const refreshRes = await fetch(
+          `https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${encodeURIComponent(branch)}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'Web-Parsing-NCI'
+            }
+          }
+        );
+        if (refreshRes.ok) {
+          const freshData: any = await refreshRes.json();
+          if (freshData?.sha) currentSha = freshData.sha;
+        }
+      }
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: `Gagal push ke GitHub: ${lastError}`
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
   }
 });
 
