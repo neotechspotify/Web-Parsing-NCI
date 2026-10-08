@@ -41,7 +41,9 @@ import {
   Lock,
   Unlock,
   ShieldCheck,
-  Key
+  Key,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -205,6 +207,24 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
     message: ''
   });
 
+  const [showPat, setShowPat] = useState<boolean>(false);
+  const [testTokenStatus, setTestTokenStatus] = useState<{ loading: boolean; type: 'success' | 'error' | null; message: string } | null>(null);
+  const [saveTokenStatus, setSaveTokenStatus] = useState<{ type: 'success' | 'error' | null; message: string } | null>(null);
+
+  // Listen to cross-component config updates (e.g. from App.tsx header modal)
+  useEffect(() => {
+    const handleGlobalConfigChange = (e: any) => {
+      if (e.detail) {
+        if (e.detail.token !== undefined) setGithubToken(e.detail.token);
+        if (e.detail.repo !== undefined) setGithubRepo(e.detail.repo);
+        if (e.detail.branch !== undefined) setGithubBranch(e.detail.branch);
+        if (e.detail.autoSync !== undefined) setGithubAutoSync(e.detail.autoSync);
+      }
+    };
+    window.addEventListener('github_config_changed', handleGlobalConfigChange);
+    return () => window.removeEventListener('github_config_changed', handleGlobalConfigChange);
+  }, []);
+
   // Fetch central GitHub configuration from server (/api/github-config)
   useEffect(() => {
     const fetchCentralGithubConfig = async () => {
@@ -230,7 +250,7 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
           const cfg = data.config;
 
           // 1. Token logic
-          const finalToken = (cfg.githubToken && cfg.githubToken.trim()) ? cfg.githubToken : localPat;
+          const finalToken = (cfg.githubToken && cfg.githubToken.trim()) ? cfg.githubToken.trim() : localPat.trim();
           if (finalToken) {
             setGithubToken(finalToken);
             localStorage.setItem('github_pat', finalToken);
@@ -245,14 +265,14 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
           }
 
           // 2. Repo logic
-          const finalRepo = cfg.githubRepo || localRepo;
+          const finalRepo = (cfg.githubRepo && cfg.githubRepo.trim()) || localRepo;
           if (finalRepo) {
             setGithubRepo(finalRepo);
             localStorage.setItem('github_repo', finalRepo);
           }
 
           // 3. Branch logic
-          const finalBranch = cfg.githubBranch || localBranch || 'main';
+          const finalBranch = (cfg.githubBranch && cfg.githubBranch.trim()) || localBranch || 'main';
           setGithubBranch(finalBranch);
           localStorage.setItem('github_branch', finalBranch);
 
@@ -333,11 +353,99 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
     URL.revokeObjectURL(url);
   };
 
+  // Test PAT Token directly against GitHub API / server verification endpoint
+  const handleTestToken = async () => {
+    const pat = githubToken.trim();
+    const repoRaw = githubRepo.trim();
+    if (!pat) {
+      setTestTokenStatus({
+        loading: false,
+        type: 'error',
+        message: 'Masukkan Personal Access Token (PAT) terlebih dahulu.'
+      });
+      return;
+    }
+
+    setTestTokenStatus({ loading: true, type: null, message: 'Menguji token ke GitHub API...' });
+
+    try {
+      // 1. Try server verification route
+      const verifyRes = await fetch('/api/github-verify-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ githubToken: pat, githubRepo: repoRaw })
+      });
+
+      if (verifyRes.ok) {
+        const verifyData = await verifyRes.json();
+        if (verifyData.success) {
+          setTestTokenStatus({
+            loading: false,
+            type: 'success',
+            message: `Koneksi Berhasil! Terotentikasi sebagai @${verifyData.username}.${verifyData.canPush ? ' Izin Write aktif.' : ''}`
+          });
+          return;
+        }
+      }
+
+      // 2. Direct client fallback if server route is unavailable
+      const userRes = await fetch('https://api.github.com/user', {
+        headers: {
+          'Authorization': `Bearer ${pat}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+
+      if (!userRes.ok) {
+        if (userRes.status === 401) {
+          throw new Error('401 Bad credentials: Token tidak valid atau sudah kedaluwarsa. Pastikan token disalin lengkap tanpa spasi.');
+        }
+        throw new Error(`GitHub API mengembalikan status ${userRes.status}`);
+      }
+
+      const userData = await userRes.json();
+      const username = userData.login || 'User';
+
+      setTestTokenStatus({
+        loading: false,
+        type: 'success',
+        message: `Koneksi Berhasil! Terotentikasi sebagai @${username}. Token aktif.`
+      });
+    } catch (err: any) {
+      setTestTokenStatus({
+        loading: false,
+        type: 'error',
+        message: err.message || 'Gagal memverifikasi token GitHub.'
+      });
+    }
+  };
+
+  // Dedicated Save Token Only handler for immediate user feedback
+  const handleSaveTokenOnly = async () => {
+    const cleanPat = githubToken.trim();
+    const cleanRepo = githubRepo.trim() || 'neotechspotify/Web-Parsing-NCI';
+    const cleanBranch = githubBranch.trim() || 'main';
+    const path = currentModalFilePath || getEffectiveGithubPath(selectedInstansi, selectedFilename);
+
+    await saveGithubSettings(cleanPat, cleanRepo, cleanBranch, path, githubAutoSync);
+    setSaveTokenStatus({
+      type: 'success',
+      message: 'Token & konfigurasi berhasil disimpan ke browser dan server!'
+    });
+    setTimeout(() => {
+      setSaveTokenStatus(null);
+    }, 4000);
+  };
+
   // Save GitHub Config
   const saveGithubSettings = async (pat: string, repo: string, branch: string, path: string, autoSync: boolean) => {
-    setGithubToken(pat);
-    setGithubRepo(repo);
-    setGithubBranch(branch);
+    const cleanPat = pat.trim();
+    const cleanRepo = (repo || 'neotechspotify/Web-Parsing-NCI').trim();
+    const cleanBranch = (branch || 'main').trim();
+
+    setGithubToken(cleanPat);
+    setGithubRepo(cleanRepo);
+    setGithubBranch(cleanBranch);
     setGithubAutoSync(autoSync);
 
     const defaultPath = `database/${selectedInstansi.toLowerCase()}/blacklists/${selectedFilename}`;
@@ -351,20 +459,25 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
     }
     setCustomGithubPaths(updatedCustomPaths);
 
-    localStorage.setItem('github_pat', pat);
-    localStorage.setItem('github_repo', repo);
-    localStorage.setItem('github_branch', branch);
+    localStorage.setItem('github_pat', cleanPat);
+    localStorage.setItem('github_repo', cleanRepo);
+    localStorage.setItem('github_branch', cleanBranch);
     localStorage.setItem('github_custom_paths', JSON.stringify(updatedCustomPaths));
     localStorage.setItem('github_autosync', autoSync ? 'true' : 'false');
+
+    // Notify other components (like App.tsx)
+    window.dispatchEvent(new CustomEvent('github_config_changed', {
+      detail: { token: cleanPat, repo: cleanRepo, branch: cleanBranch, autoSync }
+    }));
 
     try {
       await fetch('/api/github-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          githubToken: pat,
-          githubRepo: repo,
-          githubBranch: branch,
+          githubToken: cleanPat,
+          githubRepo: cleanRepo,
+          githubBranch: cleanBranch,
           githubFilePath: path || defaultPath,
           githubAutoSync: autoSync
         })
@@ -387,13 +500,64 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
     const contentToPush = customContent !== undefined ? customContent : fileContent;
     const cleanRepo = repoRaw.replace('https://github.com/', '').replace('.git', '').trim();
     const targetBranch = githubBranch.trim() || 'main';
-    const targetPath = getEffectiveGithubPath(selectedInstansi, selectedFilename);
+    const targetPath = getEffectiveGithubPath(selectedInstansi, selectedFilename).replace(/^\/+/, '').trim();
+
+    // Auto-save settings first so newly entered token is never lost
+    saveGithubSettings(pat, cleanRepo, targetBranch, targetPath, githubAutoSync);
 
     setGithubSyncStatus({ loading: true, type: null, message: `Committing ${targetPath} to GitHub...` });
 
-    // Function to retrieve latest remote SHA with full fallback (contents API + git tree API)
+    // 1. First try server-side push endpoint (bypasses browser CORS & reliable SHA retry)
+    try {
+      const serverRes = await fetch('/api/github-sync-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          githubToken: pat,
+          githubRepo: cleanRepo,
+          githubBranch: targetBranch,
+          targetPath,
+          content: contentToPush,
+          message: customMsg || `feat(repo): update ${targetPath} via Web UI`
+        })
+      });
+
+      if (serverRes.ok) {
+        const serverData = await serverRes.json();
+        if (serverData.success) {
+          const nowStr = new Date().toLocaleTimeString();
+          setGithubSyncStatus({
+            loading: false,
+            type: 'success',
+            message: `Successfully pushed ${targetPath} to GitHub at ${nowStr}!`,
+            lastSyncTime: nowStr
+          });
+          return true;
+        }
+      } else {
+        const errJson = await serverRes.json().catch(() => ({}));
+        if (serverRes.status === 401) {
+          throw new Error('Token GitHub (PAT) tidak valid atau sudah kedaluwarsa (Bad credentials). Silakan perbarui Token di menu GitHub Settings.');
+        }
+        if (serverRes.status === 403) {
+          throw new Error(errJson.message || 'Akses ditolak (HTTP 403). Pastikan Token memiliki izin Read & Write ke repositori.');
+        }
+      }
+    } catch (serverErr: any) {
+      if (serverErr.message && (serverErr.message.includes('Bad credentials') || serverErr.message.includes('403') || serverErr.message.includes('Akses ditolak'))) {
+        setGithubSyncStatus({
+          loading: false,
+          type: 'error',
+          message: `GitHub Sync Failed: ${serverErr.message}`
+        });
+        return false;
+      }
+      console.warn('[GitHub Sync] Server-side push fallback to client API:', serverErr);
+    }
+
+    // 2. Client-side fallback if server-side is not available
     const fetchLatestSha = async (): Promise<string | undefined> => {
-      // 1. Try contents endpoint directly
+      // Try contents endpoint directly
       try {
         const getRes = await fetch(
           `https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${encodeURIComponent(targetBranch)}`,
@@ -418,7 +582,6 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
         }
 
         if (getRes.status === 404) {
-          // File does not exist yet on this branch -> safe to create as new file
           return undefined;
         }
 
@@ -435,7 +598,7 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
         console.warn('[GitHub Sync] contents API query failed, trying tree fallback:', err);
       }
 
-      // 2. Fallback: Query Git Tree API for targetBranch to find file blob SHA directly
+      // Fallback: Query Git Tree API for targetBranch to find file blob SHA directly
       try {
         const treeRes = await fetch(
           `https://api.github.com/repos/${cleanRepo}/git/trees/${encodeURIComponent(targetBranch)}?recursive=1`,
@@ -468,7 +631,6 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
     };
 
     try {
-      // 1. Base64 encode content (UTF-8 safe)
       const utf8Bytes = new TextEncoder().encode(contentToPush);
       let binaryString = '';
       for (let i = 0; i < utf8Bytes.byteLength; i++) {
@@ -476,7 +638,6 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
       }
       const base64Content = btoa(binaryString);
 
-      // 2. Commit/Push file via PUT request with automatic SHA conflict retry (up to 3 attempts)
       const activeCount = contentToPush.split('\n').filter(l => l.trim() && !l.startsWith('#')).length;
       const commitMsg = customMsg || `feat(repo): update ${targetPath} via Web UI [${activeCount} active entries]`;
 
@@ -519,7 +680,6 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
         let errMsg = putData.message || `HTTP ${putRes.status}`;
         lastErrMsg = errMsg;
 
-        // Check if error is due to SHA mismatch / 409 conflict OR missing SHA (422 '"sha" wasn\'t supplied')
         const isShaConflict =
           putRes.status === 409 ||
           putRes.status === 422 ||
@@ -576,11 +736,56 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
 
     const cleanRepo = repoRaw.replace('https://github.com/', '').replace('.git', '').trim();
     const targetBranch = githubBranch.trim() || 'main';
-    const targetPath = getEffectiveGithubPath(selectedInstansi, selectedFilename);
+    const targetPath = getEffectiveGithubPath(selectedInstansi, selectedFilename).replace(/^\/+/, '').trim();
+
+    // Auto-save settings first so newly entered token is preserved
+    saveGithubSettings(pat, cleanRepo, targetBranch, targetPath, githubAutoSync);
 
     setGithubSyncStatus({ loading: true, type: null, message: `Pulling ${targetPath} from GitHub...` });
 
     try {
+      // 1. First try server-side pull endpoint (syncs files to disk and bypasses browser CORS)
+      try {
+        const serverRes = await fetch('/api/github-sync-pull', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            githubToken: pat,
+            githubRepo: cleanRepo,
+            githubBranch: targetBranch
+          })
+        });
+
+        if (serverRes.ok) {
+          const sData = await serverRes.json();
+          if (sData.success) {
+            await fetchFileContent(selectedInstansi, selectedFilename);
+            const nowStr = new Date().toLocaleTimeString();
+            setGithubSyncStatus({
+              loading: false,
+              type: 'success',
+              message: `Berhasil pull ${sData.count || 1} file dari remote GitHub repo!`,
+              lastSyncTime: nowStr
+            });
+            return;
+          }
+        } else {
+          const errData = await serverRes.json().catch(() => ({}));
+          if (serverRes.status === 401 || (errData.message && errData.message.includes('Bad credentials'))) {
+            throw new Error('Token GitHub (PAT) tidak valid atau sudah kedaluwarsa. Silakan perbarui Token di menu GitHub Settings.');
+          }
+          if (serverRes.status === 403) {
+            throw new Error('Akses ditolak (HTTP 403). Pastikan token memiliki hak akses ke repositori.');
+          }
+        }
+      } catch (serverErr: any) {
+        if (serverErr.message && (serverErr.message.includes('Bad credentials') || serverErr.message.includes('Token GitHub'))) {
+          throw serverErr;
+        }
+        console.warn('[GitHub Pull] Server pull fallback to client fetch:', serverErr);
+      }
+
+      // 2. Direct client fallback
       const getRes = await fetch(
         `https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${encodeURIComponent(targetBranch)}&_nocache=${Date.now()}`,
         {
@@ -613,7 +818,7 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
           lastSyncTime: nowStr
         });
       } else {
-        const errData = await getRes.json();
+        const errData = await getRes.json().catch(() => ({}));
         throw new Error(errData.message || 'File not found on GitHub');
       }
     } catch (err: any) {
@@ -2165,31 +2370,102 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
                 )}
 
                 {/* PAT Input */}
-                <div className="space-y-1.5">
+                <div className="space-y-2 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
                   <div className="flex items-center justify-between">
-                    <label className="font-semibold text-slate-300 flex items-center gap-1.5">
+                    <label className="font-semibold text-slate-200 flex items-center gap-1.5 text-xs">
+                      <Key className="h-3.5 w-3.5 text-indigo-400" />
                       GitHub Personal Access Token (PAT):
                     </label>
                     <a
                       href="https://github.com/settings/tokens/new?scopes=repo&description=Web-Parsing-NCI-Sync"
                       target="_blank"
                       rel="noreferrer"
-                      className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1"
+                      className="text-[11px] text-indigo-400 hover:text-indigo-300 hover:underline flex items-center gap-1"
                     >
-                      Generate PAT <ExternalLink className="h-3 w-3" />
+                      Generate PAT Classic <ExternalLink className="h-3 w-3" />
                     </a>
                   </div>
-                  <input
-                    id="input-github-pat"
-                    type="password"
-                    value={githubToken}
-                    onChange={(e) => setGithubToken(e.target.value)}
-                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
-                  />
-                  <p className="text-[11px] text-slate-500">
-                    Token is stored locally in your browser. Needs <code className="text-slate-300 font-mono">repo</code> permissions.
-                  </p>
+
+                  <div className="relative">
+                    <input
+                      id="input-github-pat"
+                      type={showPat ? 'text' : 'password'}
+                      value={githubToken}
+                      onChange={(e) => {
+                        setGithubToken(e.target.value);
+                        setTestTokenStatus(null);
+                        setSaveTokenStatus(null);
+                      }}
+                      onBlur={() => {
+                        if (githubToken) setGithubToken(githubToken.trim());
+                      }}
+                      placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                      className="w-full bg-slate-900 border border-slate-700/80 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-indigo-500 shadow-inner"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPat(!showPat)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 p-1 rounded-md transition-colors"
+                      title={showPat ? 'Sembunyikan Token' : 'Lihat Token'}
+                    >
+                      {showPat ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+
+                  {/* Inline Token Action Buttons: Test Connection & Save Token */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        id="btn-test-token"
+                        onClick={handleTestToken}
+                        disabled={testTokenStatus?.loading || !githubToken.trim()}
+                        className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-indigo-300 hover:text-indigo-200 border border-indigo-500/30 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <RefreshCw className={`h-3.5 w-3.5 ${testTokenStatus?.loading ? 'animate-spin' : ''}`} />
+                        Test Koneksi Token
+                      </button>
+
+                      <button
+                        type="button"
+                        id="btn-save-token-only"
+                        onClick={handleSaveTokenOnly}
+                        disabled={!githubToken.trim()}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+                      >
+                        <Save className="h-3.5 w-3.5" />
+                        Simpan Token
+                      </button>
+                    </div>
+
+                    <span className="text-[10px] text-slate-400">
+                      Disimpan otomatis ke browser & database server
+                    </span>
+                  </div>
+
+                  {/* Test Status Banner */}
+                  {testTokenStatus && (
+                    <div className={`p-2.5 rounded-lg border text-xs flex items-center gap-2 animate-fade-in ${
+                      testTokenStatus.type === 'success'
+                        ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+                        : 'bg-red-950/60 border-red-500/40 text-red-300'
+                    }`}>
+                      {testTokenStatus.type === 'success' ? (
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+                      ) : (
+                        <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+                      )}
+                      <span className="font-medium text-[11px]">{testTokenStatus.message}</span>
+                    </div>
+                  )}
+
+                  {/* Save Status Banner */}
+                  {saveTokenStatus && (
+                    <div className="p-2.5 rounded-lg border text-xs flex items-center gap-2 bg-emerald-950/60 border-emerald-500/40 text-emerald-300 animate-fade-in">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+                      <span className="font-semibold text-[11px]">{saveTokenStatus.message}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
