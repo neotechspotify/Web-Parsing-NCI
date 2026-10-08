@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+*.token
+.github.token
+database/.github.token
+input/*.xml
