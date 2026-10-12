@@ -752,7 +752,8 @@ export default function RepositoryTab({ instansiList }: RepositoryTabProps) {
           body: JSON.stringify({
             githubToken: pat,
             githubRepo: cleanRepo,
-            githubBranch: targetBranch
+            githubBranch: targetBranch,
+            targetPath: targetPath
           })
         });
 
