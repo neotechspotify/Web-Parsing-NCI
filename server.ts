@@ -182,7 +182,21 @@ function copyFolderSync(from: string, to: string) {
     if (fs.statSync(fromPath).isDirectory()) {
       copyFolderSync(fromPath, toPath);
     } else {
-      fs.copyFileSync(fromPath, toPath);
+      let shouldCopy = !fs.existsSync(toPath);
+      if (!shouldCopy) {
+        try {
+          const fromStat = fs.statSync(fromPath);
+          const toStat = fs.statSync(toPath);
+          if (fromStat.mtimeMs > toStat.mtimeMs || fromStat.size !== toStat.size) {
+            shouldCopy = true;
+          }
+        } catch (e) {
+          shouldCopy = true;
+        }
+      }
+      if (shouldCopy) {
+        fs.copyFileSync(fromPath, toPath);
+      }
     }
   }
 }
@@ -191,9 +205,7 @@ function copyFolderSync(from: string, to: string) {
 function getTemplatesDir(): string {
   if (process.env.VERCEL) {
     const tmpTemplates = '/tmp/templates';
-    if (!fs.existsSync(tmpTemplates)) {
-      copyFolderSync(path.join(process.cwd(), 'templates'), tmpTemplates);
-    }
+    copyFolderSync(path.join(process.cwd(), 'templates'), tmpTemplates);
     return tmpTemplates;
   }
   return path.join(process.cwd(), 'templates');
@@ -202,9 +214,7 @@ function getTemplatesDir(): string {
 function getDatabaseDir(): string {
   if (process.env.VERCEL) {
     const tmpDatabase = '/tmp/database';
-    if (!fs.existsSync(tmpDatabase)) {
-      copyFolderSync(path.join(process.cwd(), 'database'), tmpDatabase);
-    }
+    copyFolderSync(path.join(process.cwd(), 'database'), tmpDatabase);
     return tmpDatabase;
   }
   return path.join(process.cwd(), 'database');
@@ -2362,6 +2372,38 @@ app.all('/api/github-sync-pull', async (req, res) => {
     const cleanRepo = repoRaw.replace('https://github.com/', '').replace('.git', '').trim();
     const cleanBranch = branch.trim() || 'main';
 
+    const targetPath = (req.body?.targetPath || req.body?.path || req.query?.path || '').toString().trim().replace(/^\/+/, '');
+
+    // Fast path: pull single file if specified
+    if (targetPath) {
+      const contentUrl = `https://api.github.com/repos/${cleanRepo}/contents/${targetPath}?ref=${cleanBranch}&_t=${Date.now()}`;
+      const contentRes = await fetch(contentUrl, {
+        headers: {
+          'Authorization': `Bearer ${token.trim()}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'LogParsingApp'
+        }
+      });
+
+      if (contentRes.ok) {
+        const fileInfo: any = await contentRes.json();
+        if (fileInfo.content) {
+          const rawText = Buffer.from(fileInfo.content, 'base64').toString('utf-8');
+          const targetDiskPath = targetPath.startsWith('database/')
+            ? path.join(getDatabaseDir(), targetPath.replace(/^database\//, ''))
+            : path.join(getTemplatesDir(), targetPath.replace(/^templates\//, ''));
+          fs.mkdirSync(path.dirname(targetDiskPath), { recursive: true });
+          fs.writeFileSync(targetDiskPath, rawText, 'utf-8');
+          return res.json({
+            success: true,
+            message: `Berhasil pull ${targetPath} dari GitHub!`,
+            count: 1,
+            pulledFiles: [targetPath]
+          });
+        }
+      }
+    }
+
     const treeUrl = `https://api.github.com/repos/${cleanRepo}/git/trees/${cleanBranch}?recursive=1`;
     const treeRes = await fetch(treeUrl, {
       headers: {
@@ -2404,7 +2446,9 @@ app.all('/api/github-sync-pull', async (req, res) => {
           const fileInfo: any = await contentRes.json();
           if (fileInfo.content) {
             const rawText = Buffer.from(fileInfo.content, 'base64').toString('utf-8');
-            const targetDiskPath = path.join(process.cwd(), item.path);
+            const targetDiskPath = item.path.startsWith('database/')
+              ? path.join(getDatabaseDir(), item.path.replace(/^database\//, ''))
+              : path.join(getTemplatesDir(), item.path.replace(/^templates\//, ''));
             fs.mkdirSync(path.dirname(targetDiskPath), { recursive: true });
             fs.writeFileSync(targetDiskPath, rawText, 'utf-8');
             pulledFiles.push(item.path);
