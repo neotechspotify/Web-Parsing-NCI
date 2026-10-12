@@ -1,0 +1,8 @@
+{
+  "githubToken": "",
+  "githubRepo": "neotechspotify/Web-Parsing-NCI",
+  "githubBranch": "main",
+  "githubFilePath": "database/medika/blacklists/List-IP-Blacklist.txt",
+  "githubAutoSync": true,
+  "updatedAt": "2026-10-08T12:09:59.931Z"
+}
