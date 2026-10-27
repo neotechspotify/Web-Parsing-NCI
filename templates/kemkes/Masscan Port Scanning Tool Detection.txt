@@ -1,0 +1,58 @@
+Dear Team KEMKES,
+
+Berikut kami informasikan terdapat ticket yang sudah kami buat mohon untuk dilakukan pengecekan dan dilakukan tindakan terhadap mitigasi yang sudah kami sampaikan ditiket tersebut:
+
+===============================
+
+Sec. Event : {event_name}<br>
+Category : {severity}<br>
+Magnitude : {sev_magnitude}<br>
+Action : Closed<br>
+Waktu Deteksi : {tanggal} {waktu}<br>
+
+===============================
+
+Deskripsi Event :<br>
+Tim SOC mendeteksi adanya komunikasi anomali yang terjadi pada<br>
+
+Source IP :<br>
+{src_ip}	 
+
+Source Country :<br>
+{src_country} 
+
+Destination IP :<br>
+{dst_ip}
+
+Destination Port:<br>
+{dst_port} 
+
+Destination Country :<br>
+{dst_country}
+
+Query :<br>
+{query}
+
+URL/DNS :<br>
+{url}
+
+===============================
+
+Firewall PA-KEMKES mendeteksi traffic dari IP {src_ip} yang teridentifikasi sebagai tool scanning Masscan, disertai request ke file "{query}" pada server {dst_ip} port {dst_port}. Pola ini menunjukkan upaya mencari file konfigurasi yang terekspos (berpotensi berisi kredensial database atau secret key aplikasi). Traffic tidak diblokir karena rule "ALLOW UNTRUST TO TRUST 103.74.143.67 IN" dengan Vulnerability Protection profile dalam mode alert. 
+
+Aktivitas ini merupakan tahap reconnaissance dan belum menunjukkan indikasi kompromi, namun perlu verifikasi apakah file config.php tersedia di server dan apakah request tersebut mendapat respons yang membocorkan informasi.
+
+===============================
+
+Mitigasi :<br>
+- Melakukan blokir IP {src_ip} pada firewall PA-KEMKES.
+- Melakukan pengecekan access log web server {dst_ip} untuk request dari IP tersebut (path, status code, ukuran respons).
+- Memastikan file konfigurasi (config.php, .env, file backup seperti config.php.bak) tidak dapat diakses dari publik dan sebaiknya disimpan di luar webroot.
+- Mengubah action Vulnerability Protection profile pada rule ALLOW UNTRUST TO TRUST 103.74.143.67 IN dari alert menjadi reset-both/block untuk severity medium ke atas.
+- Mengaktifkan Zone Protection (Reconnaissance Protection) pada zona l2-untrust.
+- Membatasi rule inbound hanya untuk port/layanan yang memang dibutuhkan.
+
+===============================
+
+Terimakasih,<br>
+SOC Neotech
