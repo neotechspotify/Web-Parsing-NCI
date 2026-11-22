@@ -106,7 +106,28 @@ function extractEventName(e: any): string {
   return String(e.event_name || e.event_type || "").trim().replace(/^"|"$/g, '');
 }
 
-function buildDestinationIpPortsFromEvents(data: any[]): string {
+const MEDIKA_ASSET_MAP: Record<string, string> = {
+  '172.16.1.17': '(Internal - JKTBOPSRVPRO012)',
+  '172.16.1.41': '(Internal - JKT BOP-21)',
+  '172.16.1.95': '(Internal - JKTBOPSRVSAP003)',
+  '172.16.1.91': '(Internal - JKTBOPSRVMS004)',
+};
+
+function formatMedikaDestIpWithAsset(ip: string): string {
+  const cleanIp = ip.trim();
+  const asset = MEDIKA_ASSET_MAP[cleanIp];
+  return asset ? `${cleanIp} ${asset}` : cleanIp;
+}
+
+function enrichMedikaSectionBWithAssets(sectionBText: string): string {
+  if (!sectionBText) return sectionBText;
+  return sectionBText.replace(
+    /^(\s*(?:\d+\.\s*)?Destination IP:\s*)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?!\s*\(Internal\s*-)/gim,
+    (_match, prefix, ip) => `${prefix}${formatMedikaDestIpWithAsset(ip)}`
+  );
+}
+
+function buildDestinationIpPortsFromEvents(data: any[], includeMedikaAssets = false): string {
   if (!data || data.length === 0) return "Tidak ada data Destination IP & Port detected";
 
   const ipMap: Record<string, { totalHits: number; ports: Record<string, number> }> = {};
@@ -150,7 +171,8 @@ function buildDestinationIpPortsFromEvents(data: any[]): string {
 
   const lines: string[] = [];
   ipEntries.forEach(([ip, info], idx) => {
-    lines.push(`${idx + 1}. Destination IP: ${ip} (Total Hits: ${info.totalHits})`);
+    const formattedIp = includeMedikaAssets ? formatMedikaDestIpWithAsset(ip) : ip;
+    lines.push(`${idx + 1}. Destination IP: ${formattedIp} (Total Hits: ${info.totalHits})`);
     const portEntries = Object.entries(info.ports);
     for (const [p, hits] of portEntries) {
       lines.push(`Port ${p} : ${hits}`);
@@ -3049,7 +3071,10 @@ app.post('/api/parse-screenshot', upload.single('image_file'), async (req, res) 
       req.file.buffer || fs.readFileSync(req.file.path),
       req.file.mimetype
     );
-    return res.json({ success: true, text: extractedText });
+    const finalText = req.body?.instansi?.toLowerCase() === 'medika'
+      ? enrichMedikaSectionBWithAssets(extractedText)
+      : extractedText;
+    return res.json({ success: true, text: finalText });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
@@ -4238,18 +4263,19 @@ SOC Neotech`;
                 imageFile.mimetype || 'image/png'
               );
               if (ocrText) {
-                destinationIpPortsStr = ocrText;
+                destinationIpPortsStr = isMedikaOnly ? enrichMedikaSectionBWithAssets(ocrText) : ocrText;
                 processLog.push(`✅ Berhasil membaca data Destination IP & Port dari screenshot.`);
               } else {
                 processLog.push(`⚠️ Gemini Vision OCR tidak mengembalikan hasil dari screenshot.`);
               }
             } else if (req.body.section_b_text && req.body.section_b_text.trim()) {
-              destinationIpPortsStr = req.body.section_b_text.trim();
+              const rawSectionB = req.body.section_b_text.trim();
+              destinationIpPortsStr = isMedikaOnly ? enrichMedikaSectionBWithAssets(rawSectionB) : rawSectionB;
             }
 
             if (!destinationIpPortsStr) {
               if (isMedikaOnly && events.length > 0) {
-                destinationIpPortsStr = buildDestinationIpPortsFromEvents(events);
+                destinationIpPortsStr = buildDestinationIpPortsFromEvents(events, true);
               } else {
                 destinationIpPortsStr = "Tidak ada data Destination IP & Port detected";
               }
@@ -4494,18 +4520,19 @@ SOC Neotech`;
                 imageFile.mimetype || 'image/png'
               );
               if (ocrText) {
-                destinationIpPortsStr = ocrText;
+                destinationIpPortsStr = isMedikaOnly ? enrichMedikaSectionBWithAssets(ocrText) : ocrText;
                 processLog.push(`✅ Berhasil membaca data Destination IP & Port dari screenshot.`);
               } else {
                 processLog.push(`⚠️ Gemini Vision OCR tidak mengembalikan hasil dari screenshot.`);
               }
             } else if (req.body.section_b_text && req.body.section_b_text.trim()) {
-              destinationIpPortsStr = req.body.section_b_text.trim();
+              const rawSectionB = req.body.section_b_text.trim();
+              destinationIpPortsStr = isMedikaOnly ? enrichMedikaSectionBWithAssets(rawSectionB) : rawSectionB;
             }
 
             if (!destinationIpPortsStr) {
               if (isMedikaOnly && rows.length > 0) {
-                destinationIpPortsStr = buildDestinationIpPortsFromEvents(rows);
+                destinationIpPortsStr = buildDestinationIpPortsFromEvents(rows, true);
               } else {
                 destinationIpPortsStr = "Tidak ada data Destination IP & Port detected";
               }

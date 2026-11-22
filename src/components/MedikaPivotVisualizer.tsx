@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Table, Copy, Check, ShieldAlert, Sparkles, FileText, Image as ImageIcon } from 'lucide-react';
 
 interface MedikaPivotProps {
@@ -13,6 +13,10 @@ export const MedikaPivotVisualizer: React.FC<MedikaPivotProps> = ({ pivotData, s
   const [copiedPivot, setCopiedPivot] = useState(false);
   const [copiedSectionB, setCopiedSectionB] = useState(false);
   const [editableSectionB, setEditableSectionB] = useState(sectionBText || '');
+
+  useEffect(() => {
+    setEditableSectionB(sectionBText || '');
+  }, [sectionBText]);
 
   const copyPivotToClipboard = () => {
     if (!pivotData) return;
