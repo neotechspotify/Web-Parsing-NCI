@@ -4,7 +4,7 @@
 
 Berikut kami lampirkan hasil dari monitoring pada tanggal {tanggal} {jam}, dimana pada SIEM mendeteksi adanya event sebagai berikut :
 
-A. Alert :
+A. Alert yang di Ticket :
 {alerts}
 
 B. Destination IP & Port Detected:

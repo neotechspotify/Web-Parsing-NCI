@@ -3808,6 +3808,9 @@ Regards, SOC Neotech`;
         waText = `Subject: [SOC Report] Domain was blocked by dns botnet C&C
 
 Dear Team,
+
+Note : Domain-domain yg terindikasi malicious sudah kami lakukan blocking by EDL.
+
 Terdeteksi aktivitas anomali berupa komunikasi dari endpoint internal menuju server pengendali Botnet (Command & Control). Meskipun koneksi diblokir (redirect) oleh Firewall, perangkat terindikasi kuat telah terinfeksi / melakukan koneksi ke domain malicious.
 
 Ringkasan Temuan:

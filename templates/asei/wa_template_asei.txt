@@ -4,7 +4,7 @@
 
 Berikut kami lampirkan hasil dari monitoring pada tanggal {tanggal} {jam}, dimana pada NSA Dashboard mendeteksi adanya event sebagai berikut :
 
-A. Alert :
+A. Alert yang di Ticket:
 {alerts}
 
 Rekomendasi :
